@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Next.js
+frontend/.next/
+frontend/out/
+
+# NestJS/build output
+backend/dist/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Test and coverage output
+coverage/
+backend/coverage/
+
+# Prisma
+backend/prisma/generated/
+
+# Logs
+*.log
+
+# Operating system
+Thumbs.db
+Desktop.ini
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
