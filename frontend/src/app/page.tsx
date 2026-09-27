@@ -1,4 +1,4 @@
-import { BackendConnection } from "./backend-connection";
+import { BackendConnection } from "@/features/backend-connection/backend-connection";
 
 export default function Home() {
   return (
