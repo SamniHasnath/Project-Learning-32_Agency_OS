@@ -1,8 +1,212 @@
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js"
   output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+  LEAD
+}
+
+enum ProjectStatus {
+  PLANNING
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CREDIT_CARD
+  CASH
+  CHECK
+  STRIPE
+  PAYPAL
+  OTHER
+}
+
+model Client {
+  id          String       @id @default(uuid())
+  name        String
+  email       String       @unique
+  phone       String?
+  company     String?
+  address     String?
+  taxId       String?
+  notes       String?
+  status      ClientStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  projects   Project[]
+  quotations Quotation[]
+  invoices   Invoice[]
+
+  @@map("clients")
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  name        String
+  description String?
+  status      ProjectStatus @default(IN_PROGRESS)
+  budget      Float         @default(0.0)
+  startDate   DateTime?
+  endDate     DateTime?
+  clientId    String
+  client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  quotations  Quotation[]
+  invoices    Invoice[]
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@map("projects")
+}
+
+model Quotation {
+  id          String          @id @default(uuid())
+  quoteNumber String          @unique
+  title       String
+  clientId    String
+  client      Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  status      QuotationStatus @default(DRAFT)
+  validUntil  DateTime
+  subtotal    Float           @default(0.0)
+  taxRate     Float           @default(0.0)
+  taxAmount   Float           @default(0.0)
+  totalAmount Float           @default(0.0)
+  notes       String?
+  terms       String?
+
+  items       QuotationItem[]
+  invoices    Invoice[]
+
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@map("quotations")
+}
+
+model QuotationItem {
+  id          String    @id @default(uuid())
+  quotationId String
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Float     @default(1.0)
+  unitPrice   Float     @default(0.0)
+  amount      Float     @default(0.0)
+
+  @@map("quotation_items")
+}
+
+model Invoice {
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique
+  title         String
+  clientId      String
+  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  projectId     String?
+  project       Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  quotationId   String?
+  quotation     Quotation?    @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  status        InvoiceStatus @default(DRAFT)
+  issueDate     DateTime      @default(now())
+  dueDate       DateTime
+  subtotal      Float         @default(0.0)
+  taxRate       Float         @default(0.0)
+  taxAmount     Float         @default(0.0)
+  totalAmount   Float         @default(0.0)
+  paidAmount    Float         @default(0.0)
+  balance       Float         @default(0.0)
+  notes         String?
+  terms         String?
+
+  items         InvoiceItem[]
+  payments      Payment[]
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Float    @default(1.0)
+  unitPrice   Float    @default(0.0)
+  amount      Float    @default(0.0)
+
+  @@map("invoice_items")
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  paymentNumber String        @unique
+  invoiceId     String
+  invoice       Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount        Float
+  paymentMethod PaymentMethod @default(BANK_TRANSFER)
+  paymentDate   DateTime      @default(now())
+  reference     String?
+  notes         String?
+
+  createdAt     DateTime      @default(now())
+
+  @@map("payments")
+}
+
+model AgencySettings {
+  id        String   @id @default("default")
+  name      String   @default("Agency OS")
+  email     String   @default("billing@agency.com")
+  phone     String?
+  website   String?
+  taxId     String?
+  currency  String   @default("USD")
+  address   String?
+  logoUrl   String?
+  updatedAt DateTime @updatedAt
+
+  @@map("agency_settings")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String
+  entity    String
+  entityId  String?
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
 }
