@@ -14,3 +14,24 @@ export async function getApiText(
 
   return response.text();
 }
+
+export async function fetchApi<T>(
+  path: string,
+  options?: RequestInit
+): Promise<T> {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const response = await fetch(`${API_BASE_URL}${normalizedPath}`, {
+    headers: {
+      "Content-Type": "application/json",
+      ...(options?.headers || {}),
+    },
+    ...options,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API error (${response.status}): ${errorText || response.statusText}`);
+  }
+
+  return response.json();
+}
