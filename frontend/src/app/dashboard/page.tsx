@@ -56,10 +56,10 @@ export default function DashboardPage() {
         },
       ]
     : [
-        { label: "Total Revenue", value: "$48,250", change: "+14.2% vs last month", tone: "brand" },
+        { label: "Total Revenue", value: "$9,200", change: "+0% vs last month", tone: "brand" },
         { label: "Pending Invoices", value: "$8,250", change: "Outstanding collection", tone: "amber" },
-        { label: "Active Projects", value: "8 active", change: "In progress", tone: "green" },
-        { label: "Active Quotations", value: "4 proposals", change: "Sent to clients", tone: "blue" },
+        { label: "Active Projects", value: "1 active", change: "In progress", tone: "green" },
+        { label: "Active Quotations", value: "1 proposal", change: "Sent to clients", tone: "blue" },
       ];
 
   const formattedActivity: WorkspaceRecord[] = recentData
@@ -70,7 +70,7 @@ export default function DashboardPage() {
           subtitle: inv.title,
           status: (inv.status === "PAID" ? "Paid" : inv.status === "SENT" ? "Sent" : "Overdue") as any,
           amount: inv.totalAmount,
-          date: inv.createdAt.split("T")[0],
+          date: inv.createdAt ? inv.createdAt.split("T")[0] : new Date().toISOString().split("T")[0],
         })),
         ...recentData.quotations.map((q) => ({
           id: q.quoteNumber,
@@ -78,12 +78,13 @@ export default function DashboardPage() {
           subtitle: q.title,
           status: (q.status === "ACCEPTED" ? "Accepted" : q.status === "SENT" ? "Sent" : "Draft") as any,
           amount: q.totalAmount,
-          date: q.createdAt.split("T")[0],
+          date: q.createdAt ? q.createdAt.split("T")[0] : new Date().toISOString().split("T")[0],
         })),
       ].slice(0, 5)
     : [
-        { id: "INV-2026-0001", title: "Invoice INV-2026-0001 - Globex", subtitle: "Brand Identity Design", status: "Paid", amount: 9200, date: "2026-09-28" },
-        { id: "QT-2026-0001", title: "Quotation QT-2026-0001 - Acme Corp", subtitle: "Enterprise Web App", status: "Sent", amount: 16500, date: "2026-09-27" },
+        { id: "INV-2026-0001", title: "Invoice INV-2026-0001 - Globex Enterprise", subtitle: "Brand Identity Design Milestone 1", status: "Paid", amount: 9200, date: "2026-09-29" },
+        { id: "INV-2026-0002", title: "Invoice INV-2026-0002 - Acme Corporation", subtitle: "E-Commerce Initial Deposit (50%)", status: "Sent", amount: 8250, date: "2026-09-29" },
+        { id: "QT-2026-0001", title: "Quotation QT-2026-0001 - Acme Corporation", subtitle: "Enterprise Web Application Suite", status: "Sent", amount: 16500, date: "2026-09-29" },
       ];
 
   return <Dashboard metrics={formattedMetrics} activity={formattedActivity} />;
