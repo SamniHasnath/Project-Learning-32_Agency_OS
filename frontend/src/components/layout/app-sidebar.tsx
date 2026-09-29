@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NavIcon, type NavIconName } from "@/components/layout/nav-icon";
-
 import { AgencyOsLogo } from "@/components/ui/agency-os-logo";
+import { useSettings } from "@/context/settings-context";
 
 type AppSidebarProps = {
   onNavigate?: () => void;
@@ -64,6 +64,7 @@ function NavigationLink({
 
 export function AppSidebar({ onNavigate }: AppSidebarProps) {
   const pathname = usePathname();
+  const { settings } = useSettings();
 
   function renderItems(items: NavigationItem[]) {
     return items.map((item) => {
@@ -95,7 +96,7 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
           Workspace
         </p>
         <p className="mt-1 truncate px-2 text-sm font-medium text-slate-700">
-          Northstar Creative
+          {settings?.name || "Northstar Creative"}
         </p>
       </div>
 
