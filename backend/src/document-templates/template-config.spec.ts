@@ -2,8 +2,17 @@ import { normaliseLayout, SECTION_KEYS } from './template-config';
 
 describe('normaliseLayout', () => {
   it('keeps the given order and appends missing sections', () => {
-    const layout = normaliseLayout({ title: 'QUOTE', sections: [{ key: 'notes', visible: true }, { key: 'header', visible: true }] });
-    expect(layout.sections.map((s) => s.key).slice(0, 2)).toEqual(['notes', 'header']);
+    const layout = normaliseLayout({
+      title: 'QUOTE',
+      sections: [
+        { key: 'notes', visible: true },
+        { key: 'header', visible: true },
+      ],
+    });
+    expect(layout.sections.map((s) => s.key).slice(0, 2)).toEqual([
+      'notes',
+      'header',
+    ]);
     expect(layout.sections).toHaveLength(SECTION_KEYS.length);
   });
 
@@ -16,8 +25,12 @@ describe('normaliseLayout', () => {
         { key: 'bogus' as never, visible: true },
       ],
     });
-    expect(layout.sections.filter((s) => s.key === 'header')).toEqual([{ key: 'header', visible: true }]);
-    expect(layout.sections.some((s) => (s.key as string) === 'bogus')).toBe(false);
+    expect(layout.sections.filter((s) => s.key === 'header')).toEqual([
+      { key: 'header', visible: true },
+    ]);
+    expect(layout.sections.some((s) => (s.key as string) === 'bogus')).toBe(
+      false,
+    );
   });
 
   it('never hides line items or totals', () => {
