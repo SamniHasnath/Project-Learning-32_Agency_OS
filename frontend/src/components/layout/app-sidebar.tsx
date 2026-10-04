@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NavIcon, type NavIconName } from "@/components/layout/nav-icon";
 import { AgencyOsLogo } from "@/components/ui/agency-os-logo";
-import { useSettings } from "@/context/settings-context";
+import { useSession } from "@/context/auth-context";
 
 type AppSidebarProps = {
   onNavigate?: () => void;
@@ -20,11 +20,11 @@ const primaryNavigation: NavigationItem[] = [
   { href: "/dashboard", icon: "dashboard", label: "Dashboard" },
   { href: "/clients", icon: "clients", label: "Clients" },
   { href: "/projects", icon: "projects", label: "Projects" },
+  { href: "/documents", icon: "documents", label: "Document overview" },
   { href: "/quotations", icon: "quotations", label: "Quotations" },
   { href: "/invoices", icon: "invoices", label: "Invoices" },
   { href: "/payments", icon: "payments", label: "Payments" },
   { href: "/templates", icon: "templates", label: "Templates" },
-  { href: "/documents", icon: "documents", label: "Documents" },
 ];
 
 const secondaryNavigation: NavigationItem[] = [
@@ -64,7 +64,7 @@ function NavigationLink({
 
 export function AppSidebar({ onNavigate }: AppSidebarProps) {
   const pathname = usePathname();
-  const { settings } = useSettings();
+  const { agency } = useSession();
 
   function renderItems(items: NavigationItem[]) {
     return items.map((item) => {
@@ -96,7 +96,7 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
           Workspace
         </p>
         <p className="mt-1 truncate px-2 text-sm font-medium text-slate-700">
-          {settings?.name || "Northstar Creative"}
+          {agency.name}
         </p>
       </div>
 
