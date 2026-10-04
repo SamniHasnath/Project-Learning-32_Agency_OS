@@ -1,5 +1,10 @@
 import { ConflictException } from '@nestjs/common';
-import { assertTransition, INVOICE_TRANSITIONS, QUOTATION_TRANSITIONS, statusAfterPayment } from './status-workflow';
+import {
+  assertTransition,
+  INVOICE_TRANSITIONS,
+  QUOTATION_TRANSITIONS,
+  statusAfterPayment,
+} from './status-workflow';
 
 describe('quotation status workflow', () => {
   it.each([
@@ -11,7 +16,9 @@ describe('quotation status workflow', () => {
     ['SENT', 'VOID'],
     ['ACCEPTED', 'VOID'],
   ] as const)('allows %s → %s', (from, to) => {
-    expect(() => assertTransition(QUOTATION_TRANSITIONS, from, to, 'Quotation')).not.toThrow();
+    expect(() =>
+      assertTransition(QUOTATION_TRANSITIONS, from, to, 'Quotation'),
+    ).not.toThrow();
   });
 
   it.each([
@@ -23,13 +30,17 @@ describe('quotation status workflow', () => {
     ['VOID', 'DRAFT'],
     ['SENT', 'SENT'],
   ] as const)('rejects %s → %s', (from, to) => {
-    expect(() => assertTransition(QUOTATION_TRANSITIONS, from, to, 'Quotation')).toThrow(ConflictException);
+    expect(() =>
+      assertTransition(QUOTATION_TRANSITIONS, from, to, 'Quotation'),
+    ).toThrow(ConflictException);
   });
 });
 
 describe('invoice status workflow', () => {
   it('only allows payment-driven statuses to be set by payments', () => {
-    for (const from of Object.keys(INVOICE_TRANSITIONS) as (keyof typeof INVOICE_TRANSITIONS)[]) {
+    for (const from of Object.keys(
+      INVOICE_TRANSITIONS,
+    ) as (keyof typeof INVOICE_TRANSITIONS)[]) {
       expect(INVOICE_TRANSITIONS[from]).not.toContain('PAID');
       expect(INVOICE_TRANSITIONS[from]).not.toContain('PARTIALLY_PAID');
     }
