@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '../auth/auth-user';
 import { CurrentUser } from '../auth/auth-user';
@@ -17,7 +25,10 @@ export class PaymentsController {
   }
 
   @Get(':id')
-  findOne(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+  findOne(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.payments.findOne(user.agencyId, id);
   }
 
