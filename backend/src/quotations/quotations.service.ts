@@ -1,163 +1,284 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { AuditService } from '../common/audit/audit.service';
+import { addDays, assertDateOrder, endOfDay, itemRows, pricingFields } from '../common/documents/document-helpers';
+import { lockDocument } from '../common/documents/row-lock';
+import { asJson, SnapshotService } from '../common/documents/snapshot.service';
+import { assertTransition, QUOTATION_TRANSITIONS } from '../common/documents/status-workflow';
+import { calculateDocument } from '../common/money/document-calculator';
+import { NumberingService } from '../common/numbering/numbering.service';
+import { DocumentTemplatesService } from '../document-templates/document-templates.service';
+import { INVOICE_DETAIL_INCLUDE } from '../invoices/invoices.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  ConvertQuotationDto,
+  CreateQuotationDto,
+  ListQuotationsQuery,
+  UpdateQuotationDto,
+  UpdateQuotationStatusDto,
+} from './dto/quotation.dto';
+
+export const QUOTATION_DETAIL_INCLUDE = {
+  items: { orderBy: { position: 'asc' } },
+  invoice: { select: { id: true, number: true, status: true } },
+  project: { select: { id: true, name: true } },
+} satisfies Prisma.QuotationInclude;
 
 @Injectable()
 export class QuotationsService {
-  private memoryQuotations = [
-    {
-      id: 'q1',
-      quoteNumber: 'QT-2026-0001',
-      title: 'Enterprise Web Application Suite',
-      clientId: 'c1',
-      client: { id: 'c1', name: 'Acme Corporation', email: 'contact@acmecorp.com' },
-      status: 'SENT',
-      validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      subtotal: 15000,
-      taxRate: 10,
-      taxAmount: 1500,
-      totalAmount: 16500,
-      notes: 'Includes 1 year maintenance & API documentation',
-      terms: 'Net 30 payment terms upon milestone completion',
-      items: [
-        { id: 'qi1', description: 'Frontend Architecture & Next.js Setup', quantity: 1, unitPrice: 7000, amount: 7000 },
-        { id: 'qi2', description: 'Backend Microservices & Prisma Integration', quantity: 1, unitPrice: 8000, amount: 8000 },
-      ],
-      createdAt: new Date().toISOString(),
-    },
-  ];
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly numbering: NumberingService,
+    private readonly snapshots: SnapshotService,
+    private readonly templates: DocumentTemplatesService,
+    private readonly audit: AuditService,
+  ) {}
 
-  constructor(private prisma: PrismaService) {}
-
-  async findAll() {
-    if (this.prisma.isConnected) {
-      try {
-        return await this.prisma.quotation.findMany({
-          include: { client: true, project: true, items: true },
-          orderBy: { createdAt: 'desc' },
-        });
-      } catch (e) {
-        console.warn('DB error, using memory fallback:', e?.message);
-      }
-    }
-    return this.memoryQuotations;
+  findAll(agencyId: string, query: ListQuotationsQuery = {}) {
+    const search = query.search?.trim();
+    return this.prisma.quotation.findMany({
+      where: {
+        agencyId,
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.clientId ? { clientId: query.clientId } : {}),
+        ...(search
+          ? {
+              OR: [
+                { number: { contains: search, mode: 'insensitive' } },
+                { title: { contains: search, mode: 'insensitive' } },
+                { client: { name: { contains: search, mode: 'insensitive' } } },
+              ],
+            }
+          : {}),
+      },
+      include: { invoice: { select: { id: true, number: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
-  async findOne(id: string) {
-    if (this.prisma.isConnected) {
-      try {
-        const quotation = await this.prisma.quotation.findUnique({
-          where: { id },
-          include: { client: true, project: true, items: true, invoices: true },
-        });
-        if (quotation) return quotation;
-      } catch (e) {
-        console.warn('DB error, using memory fallback:', e?.message);
-      }
-    }
-    const quotation = this.memoryQuotations.find((q) => q.id === id);
-    if (!quotation) throw new NotFoundException(`Quotation with ID ${id} not found`);
+  async findOne(agencyId: string, id: string) {
+    const quotation = await this.prisma.quotation.findFirst({ where: { id, agencyId }, include: QUOTATION_DETAIL_INCLUDE });
+    if (!quotation) throw new NotFoundException('Quotation not found');
     return quotation;
   }
 
-  async create(dto: any) {
-    const { items = [], ...data } = dto;
-    const calculatedItems = items.map((item: any, i: number) => ({
-      id: `qi-${Date.now()}-${i}`,
-      description: item.description || 'Line item',
-      quantity: Number(item.quantity || 1),
-      unitPrice: Number(item.unitPrice || 0),
-      amount: Number(item.quantity || 1) * Number(item.unitPrice || 0),
-    }));
+  async create(agencyId: string, userId: string, dto: CreateQuotationDto) {
+    const calc = calculateDocument(dto.items, dto);
+    const issueDate = dto.issueDate ? new Date(dto.issueDate) : new Date();
+    const expiryDate = new Date(dto.expiryDate);
+    assertDateOrder(issueDate, expiryDate, 'Expiry date must be on or after the issue date');
 
-    const subtotal = calculatedItems.reduce((acc: number, item: any) => acc + item.amount, 0);
-    const taxRate = Number(data.taxRate || 0);
-    const taxAmount = (subtotal * taxRate) / 100;
-    const totalAmount = subtotal + taxAmount;
+    return this.prisma.$transaction(async (tx) => {
+      const { snapshot: clientSnapshot } = await this.snapshots.loadClient(tx, agencyId, dto.clientId);
+      await this.snapshots.assertProject(tx, agencyId, dto.clientId, dto.projectId);
+      const { snapshot: agencySnapshot } = await this.snapshots.loadAgency(tx, agencyId);
+      const template = await this.templates.resolve(tx, agencyId, 'QUOTATION', dto.templateId);
+      const number = await this.numbering.next(tx, agencyId, 'QT');
 
-    if (this.prisma.isConnected) {
-      try {
-        const count = await this.prisma.quotation.count();
-        const quoteNumber = data.quoteNumber || `QT-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
-        return await this.prisma.quotation.create({
-          data: {
-            ...data,
-            quoteNumber,
-            validUntil: data.validUntil ? new Date(data.validUntil) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-            subtotal,
-            taxRate,
-            taxAmount,
-            totalAmount,
-            items: { create: calculatedItems.map(({ id, ...rest }: any) => rest) },
-          },
-          include: { client: true, items: true },
+      const quotation = await tx.quotation.create({
+        data: {
+          agencyId,
+          number,
+          title: dto.title.trim(),
+          clientId: dto.clientId,
+          projectId: dto.projectId ?? null,
+          templateId: template.templateId,
+          issueDate,
+          expiryDate: endOfDay(expiryDate),
+          clientSnapshot: asJson(clientSnapshot),
+          agencySnapshot: asJson(agencySnapshot),
+          templateSnapshot: asJson(template.snapshot),
+          currency: agencySnapshot.currency,
+          notes: dto.notes?.trim() || null,
+          terms: dto.terms?.trim() || null,
+          ...pricingFields(calc),
+          items: { create: itemRows(calc) },
+        },
+        include: QUOTATION_DETAIL_INCLUDE,
+      });
+      await this.audit.log(tx, { agencyId, userId, action: 'quotation.created', entity: 'Quotation', entityId: quotation.id, details: { number } });
+      return quotation;
+    });
+  }
+
+  /**
+   * Edits a DRAFT quotation. Totals are always recomputed server-side, and the
+   * client/agency/template snapshots are refreshed (they freeze once SENT).
+   */
+  async update(agencyId: string, userId: string, id: string, dto: UpdateQuotationDto) {
+    return this.prisma.$transaction(async (tx) => {
+      await lockDocument(tx, 'quotations', id, agencyId);
+      const existing = await tx.quotation.findUniqueOrThrow({ where: { id }, include: { items: { orderBy: { position: 'asc' } } } });
+      if (existing.status !== 'DRAFT') throw new ConflictException('Only DRAFT quotations can be edited');
+
+      const calc = calculateDocument(dto.items ?? existing.items, {
+        discountType: dto.discountType ?? existing.discountType,
+        discountValue: dto.discountValue ?? existing.discountValue,
+        taxRate: dto.taxRate ?? existing.taxRate,
+      });
+      const issueDate = dto.issueDate ? new Date(dto.issueDate) : existing.issueDate;
+      const expiryDate = dto.expiryDate ? endOfDay(new Date(dto.expiryDate)) : existing.expiryDate;
+      assertDateOrder(issueDate, expiryDate, 'Expiry date must be on or after the issue date');
+
+      const clientId = dto.clientId ?? existing.clientId;
+      const projectId = dto.projectId !== undefined ? dto.projectId : existing.projectId;
+      const { snapshot: clientSnapshot } = await this.snapshots.loadClient(tx, agencyId, clientId);
+      await this.snapshots.assertProject(tx, agencyId, clientId, projectId);
+      const { snapshot: agencySnapshot } = await this.snapshots.loadAgency(tx, agencyId);
+      const template = await this.templates.resolve(
+        tx,
+        agencyId,
+        'QUOTATION',
+        dto.templateId !== undefined ? dto.templateId : existing.templateId,
+      );
+
+      await tx.quotationItem.deleteMany({ where: { quotationId: id } });
+      const quotation = await tx.quotation.update({
+        where: { id },
+        data: {
+          title: dto.title?.trim() ?? existing.title,
+          clientId,
+          projectId: projectId ?? null,
+          templateId: template.templateId,
+          issueDate,
+          expiryDate,
+          clientSnapshot: asJson(clientSnapshot),
+          agencySnapshot: asJson(agencySnapshot),
+          templateSnapshot: asJson(template.snapshot),
+          currency: agencySnapshot.currency,
+          notes: dto.notes !== undefined ? dto.notes.trim() || null : existing.notes,
+          terms: dto.terms !== undefined ? dto.terms.trim() || null : existing.terms,
+          ...pricingFields(calc),
+          items: { create: itemRows(calc) },
+        },
+        include: QUOTATION_DETAIL_INCLUDE,
+      });
+      await this.audit.log(tx, { agencyId, userId, action: 'quotation.updated', entity: 'Quotation', entityId: id });
+      return quotation;
+    });
+  }
+
+  async changeStatus(agencyId: string, userId: string, id: string, dto: UpdateQuotationStatusDto) {
+    return this.prisma.$transaction(async (tx) => {
+      await lockDocument(tx, 'quotations', id, agencyId);
+      const existing = await tx.quotation.findUniqueOrThrow({ where: { id }, include: { invoice: { select: { id: true } } } });
+      assertTransition(QUOTATION_TRANSITIONS, existing.status, dto.status, 'Quotation');
+
+      if (dto.status === 'ACCEPTED' && existing.expiryDate < new Date()) {
+        throw new ConflictException('This quotation has passed its expiry date and can no longer be accepted');
+      }
+      if (dto.status === 'VOID' && existing.invoice) {
+        throw new ConflictException('This quotation has been converted to an invoice and cannot be voided');
+      }
+
+      const now = new Date();
+      const quotation = await tx.quotation.update({
+        where: { id },
+        data: {
+          status: dto.status,
+          ...(dto.status === 'SENT' ? { sentAt: now } : {}),
+          ...(dto.status === 'ACCEPTED' ? { acceptedAt: now } : {}),
+        },
+        include: QUOTATION_DETAIL_INCLUDE,
+      });
+      await this.audit.log(tx, {
+        agencyId,
+        userId,
+        action: 'quotation.status_changed',
+        entity: 'Quotation',
+        entityId: id,
+        details: { from: existing.status, to: dto.status },
+      });
+      return quotation;
+    });
+  }
+
+  /**
+   * Converts an ACCEPTED quotation into an invoice, copying the client,
+   * agency and line-item snapshots, totals, notes, terms and reference.
+   *
+   * Idempotent: if the quotation already has an invoice, that invoice is
+   * returned. Duplicates are impossible because (1) the quotation row is locked
+   * for the duration of the transaction, so concurrent clicks run one after the
+   * other and the second sees the invoice, and (2) Invoice.quotationId is
+   * UNIQUE in the database as a last line of defence.
+   */
+  async convertToInvoice(agencyId: string, userId: string, id: string, dto: ConvertQuotationDto = {}) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await lockDocument(tx, 'quotations', id, agencyId);
+        const quotation = await tx.quotation.findUniqueOrThrow({
+          where: { id },
+          include: { items: { orderBy: { position: 'asc' } }, invoice: { select: { id: true } } },
         });
-      } catch (e) {
-        console.warn('DB error, saving quotation to memory:', e?.message);
+        if (quotation.invoice) {
+          return tx.invoice.findUniqueOrThrow({ where: { id: quotation.invoice.id }, include: INVOICE_DETAIL_INCLUDE });
+        }
+        if (quotation.status !== 'ACCEPTED') {
+          throw new ConflictException(`Only ACCEPTED quotations can be converted (this one is ${quotation.status})`);
+        }
+
+        const issueDate = new Date();
+        const dueDate = endOfDay(dto.dueDate ? new Date(dto.dueDate) : addDays(issueDate, 14));
+        assertDateOrder(issueDate, dueDate, 'Due date must be on or after today');
+        const template = await this.templates.resolve(tx, agencyId, 'INVOICE', dto.templateId);
+        const number = await this.numbering.next(tx, agencyId, 'INV');
+
+        const invoice = await tx.invoice.create({
+          data: {
+            agencyId,
+            number,
+            title: quotation.title,
+            quotationId: quotation.id,
+            reference: quotation.number,
+            clientId: quotation.clientId,
+            projectId: quotation.projectId,
+            templateId: template.templateId,
+            issueDate,
+            dueDate,
+            clientSnapshot: quotation.clientSnapshot as Prisma.InputJsonValue,
+            agencySnapshot: quotation.agencySnapshot as Prisma.InputJsonValue,
+            templateSnapshot: asJson(template.snapshot),
+            subtotal: quotation.subtotal,
+            discountType: quotation.discountType,
+            discountValue: quotation.discountValue,
+            discountAmount: quotation.discountAmount,
+            taxRate: quotation.taxRate,
+            taxAmount: quotation.taxAmount,
+            total: quotation.total,
+            paidAmount: 0,
+            outstandingAmount: quotation.total,
+            currency: quotation.currency,
+            notes: quotation.notes,
+            terms: quotation.terms,
+            items: {
+              create: quotation.items.map(({ position, description, quantity, unitPrice, lineTotal }) => ({
+                position,
+                description,
+                quantity,
+                unitPrice,
+                lineTotal,
+              })),
+            },
+          },
+          include: INVOICE_DETAIL_INCLUDE,
+        });
+        await this.audit.log(tx, {
+          agencyId,
+          userId,
+          action: 'quotation.converted',
+          entity: 'Quotation',
+          entityId: quotation.id,
+          details: { invoiceId: invoice.id, invoiceNumber: number },
+        });
+        return invoice;
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const existing = await this.prisma.invoice.findFirst({ where: { quotationId: id, agencyId }, include: INVOICE_DETAIL_INCLUDE });
+        if (existing) return existing;
       }
+      throw e;
     }
-
-    const count = this.memoryQuotations.length;
-    const quoteNumber = data.quoteNumber || `QT-2026-${String(count + 1).padStart(4, '0')}`;
-    const newQuote = {
-      id: `q-${Date.now()}`,
-      quoteNumber,
-      title: data.title || 'New Quotation',
-      clientId: data.clientId || 'c1',
-      client: { id: 'c1', name: 'Acme Corporation', email: 'contact@acmecorp.com' },
-      status: data.status || 'DRAFT',
-      validUntil: data.validUntil || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      subtotal,
-      taxRate,
-      taxAmount,
-      totalAmount,
-      notes: data.notes,
-      terms: data.terms,
-      items: calculatedItems,
-      createdAt: new Date().toISOString(),
-    };
-    this.memoryQuotations.unshift(newQuote);
-    return newQuote;
-  }
-
-  async update(id: string, dto: any) {
-    if (this.prisma.isConnected) {
-      try {
-        return await this.prisma.quotation.update({ where: { id }, data: dto, include: { client: true, items: true } });
-      } catch (e) {
-        console.warn('DB error, updating quotation in memory:', e?.message);
-      }
-    }
-    const index = this.memoryQuotations.findIndex((q) => q.id === id);
-    if (index === -1) throw new NotFoundException(`Quotation with ID ${id} not found`);
-    this.memoryQuotations[index] = { ...this.memoryQuotations[index], ...dto };
-    return this.memoryQuotations[index];
-  }
-
-  async convertToInvoice(id: string) {
-    const quotation = await this.findOne(id);
-    quotation.status = 'ACCEPTED';
-    return {
-      id: `inv-conv-${Date.now()}`,
-      invoiceNumber: `INV-2026-${String(Date.now()).slice(-4)}`,
-      title: `Invoice for ${quotation.title}`,
-      clientId: quotation.clientId,
-      client: quotation.client,
-      status: 'SENT',
-      totalAmount: quotation.totalAmount,
-      paidAmount: 0,
-      balance: quotation.totalAmount,
-    };
-  }
-
-  async remove(id: string) {
-    if (this.prisma.isConnected) {
-      try {
-        return await this.prisma.quotation.delete({ where: { id } });
-      } catch (e) {
-        console.warn('DB error, deleting from memory:', e?.message);
-      }
-    }
-    this.memoryQuotations = this.memoryQuotations.filter((q) => q.id !== id);
-    return { success: true };
   }
 }
