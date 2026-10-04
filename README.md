@@ -1,126 +1,94 @@
 # Agency OS
 
-Agency OS is a quotation, invoice, and payment management application for
-agencies. This project uses separate frontend and backend applications:
+Multi-tenant quotation, invoice, payment and document-template management for agencies.
 
-- **Frontend:** Next.js, TypeScript, and Tailwind CSS
-- **Backend:** NestJS and TypeScript
-- **Planned database:** PostgreSQL with Prisma ORM
+- **Frontend:** Next.js 16 (App Router), React 19, Tailwind CSS 4
+- **Backend:** NestJS 11, Prisma 7, PostgreSQL 16
+- **PDF:** server-side vector PDFs with `pdfkit` (real text, not screenshots)
 
-## Request architecture
+## Features
+
+| Area | What you get |
+|---|---|
+| Quotations | Create/edit drafts, pick an existing client (details auto-fill), multiple line items, discount (fixed or %), tax, notes, terms, expiry date, template selection, preview, print, PDF. Statuses `DRAFT → SENT → ACCEPTED / REJECTED / EXPIRED`, plus `VOID`. |
+| Invoices | Direct creation or conversion from an **accepted** quotation (client, items, totals, notes, terms and reference copied). Statuses `DRAFT, SENT, PARTIALLY_PAID, PAID, OVERDUE, VOID`. |
+| Payments | Partial payments, paid/outstanding tracking, overpayment rejected, payment history per invoice. |
+| Templates | Reusable per-agency templates: colours, font, logo on/off, title, section order & visibility, footer. One default per document type. |
+| Tenancy | Every record belongs to an agency; the agency id comes only from the signed JWT. |
+| History | Each document stores frozen snapshots of the client, agency and template, so later edits never change issued documents. |
+| Numbering | `QT-2026-0001`, `INV-2026-0001`, `PAY-2026-0001`: per agency, per year, gap-free and concurrency-safe. |
+| Automation | Hourly job marks overdue invoices `OVERDUE` and expired quotations `EXPIRED`. |
+
+## Quick start (Docker, recommended)
+
+```bash
+cp .env.example .env            # set POSTGRES_PASSWORD and JWT_SECRET
+docker compose up -d --build
+docker compose exec api npm run db:seed   # optional demo data
+```
+
+- Web app: http://localhost:3000. Demo login: `demo@agencyos.dev` / `Demo1234!` (after seeding), or register a new agency.
+- API: http://localhost:3001/api. Interactive docs: http://localhost:3001/api/docs
+- Health: http://localhost:3001/api/health
+
+The API container applies database migrations itself on start (`prisma migrate deploy`).
+
+## Local development
+
+Requirements: Node 22+, PostgreSQL 16 (or `docker run -d --name agency-os-db -e POSTGRES_USER=agency_os -e POSTGRES_PASSWORD=agency_os_dev -e POSTGRES_DB=agency_os -p 5434:5432 postgres:16-alpine`).
+
+```bash
+# API
+cd backend
+cp .env.example .env              # fill DATABASE_URL, TEST_DATABASE_URL, JWT_SECRET
+npm install
+npm run db:migrate                # create/upgrade schema
+npm run db:seed                   # optional demo data
+npm run start:dev                 # http://localhost:3001/api
+
+# Web
+cd ../frontend
+cp .env.example .env.local        # NEXT_PUBLIC_API_URL=http://localhost:3001
+npm install
+npm run dev                       # http://localhost:3000
+```
+
+## Tests
+
+| Command | What it covers |
+|---|---|
+| `cd backend && npm test` | Unit: money calculations (Decimal, rounding, discount/tax), status workflows, numbering format, template normalisation |
+| `cd backend && npm run test:e2e` | API integration against a real PostgreSQL (`TEST_DATABASE_URL`, wiped each run): auth, tenant isolation, quotation → invoice conversion (including 8 concurrent clicks producing exactly one invoice), payments (1000 / 800 / +500 is rejected, plus concurrent overpayment), concurrent numbering, snapshot protection, templates, PDF |
+| `cd frontend && npm run test:e2e` | Browser (Playwright, Chrome): register → client → quotation → send → accept → PDF → convert (double-click) → partial payment → overpayment blocked → paid; cross-agency access blocked; auth redirect. Needs the stack running. |
+
+## Deploying
+
+Any container host works (Render, Railway, Fly.io, ECS, a VM with Docker):
+
+1. Provision PostgreSQL and set `DATABASE_URL` for the API.
+2. Deploy `backend/` (Dockerfile) with `JWT_SECRET` (48+ random chars), `FRONTEND_URL` (your web origin, comma-separate multiple) and `PORT`.
+3. Deploy `frontend/` (Dockerfile) with build arg `NEXT_PUBLIC_API_URL` set to the public API URL.
+4. Serve both over HTTPS. Set `SWAGGER=false` on the API if you don't want public docs.
+
+## Project structure
 
 ```text
-Browser
-  -> Next.js frontend
-  -> REST API request
-  -> NestJS controller
-  -> NestJS service (business rules)
-  -> Prisma ORM
-  -> PostgreSQL
+backend/src
+  auth/                 JWT login/register, global guard, @CurrentAgency()
+  common/
+    money/              document-calculator (single source of truth for totals)
+    numbering/          atomic per-agency sequence (INSERT … ON CONFLICT … RETURNING)
+    documents/          snapshots, row locks, status workflow, shared DTOs
+  quotations/ invoices/ payments/ clients/ projects/ settings/ dashboard/
+  document-templates/   template CRUD + built-in starter templates
+  pdf/                  template-driven PDF renderer
+  jobs/                 hourly EXPIRED / OVERDUE sweep
+frontend/src
+  app/                  routes (quotations, invoices, payments, templates, documents, …)
+  features/documents/   shared form, renderer (preview/print), PDF actions, status rules
+  features/…            quotation/invoice detail, template editor, client/project forms
+  components/           layout shell, data table, UI primitives
+  lib/ services/ types/ API client, formatting, typed endpoints, models
 ```
 
-The controller receives HTTP requests, the service owns application rules,
-Prisma communicates with the database, and PostgreSQL stores application data.
-The frontend renders the user interface in the browser.
-
-## Run the frontend
-
-Open PowerShell in the `agency-os` directory:
-
-```powershell
-cd .\frontend
-npm run dev
-```
-
-Open <http://localhost:3000> in a browser.
-
-## Run the backend
-
-Open a second PowerShell window in the `agency-os` directory:
-
-```powershell
-cd .\backend
-npm run start:dev
-```
-
-The backend listens on port `3001` by default so it can run at the same time as
-the frontend.
-
-## Verify the backend API
-
-With the backend running, use a second PowerShell window:
-
-```powershell
-Invoke-RestMethod http://localhost:3001/
-```
-
-The initial NestJS route should respond with:
-
-```text
-Hello World!
-```
-
-The frontend makes this same request in the browser and displays the response in
-its **Backend connection** panel. The API allows requests from
-`http://localhost:3000`; set `FRONTEND_URL` on the backend if the frontend is
-served from another origin. Set `NEXT_PUBLIC_API_URL` in
-`frontend/.env.local` if the backend is hosted at a different address, then
-restart the frontend.
-
-## PostgreSQL and Prisma
-
-PostgreSQL 18 should be running as the Windows service `postgresql-x64-18`.
-Create a dedicated application role and the `agency_os` database using an
-interactive `psql` session:
-
-```powershell
-& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -U postgres -d postgres -W
-```
-
-At the `postgres=#` prompt, run these commands one at a time:
-
-```sql
-CREATE ROLE agency_os_app LOGIN;
-\password agency_os_app
-CREATE DATABASE agency_os OWNER agency_os_app;
-\q
-```
-
-`\password` asks for a new password without echoing it. Choose a strong
-alphanumeric password so it can be put in a connection URL without URL
-encoding. Do not use the PostgreSQL administrator account for the application.
-
-From `agency-os\backend`, create the ignored local environment file and edit it:
-
-```powershell
-Copy-Item .env.example .env -Force
-notepad .env
-```
-
-Replace `REPLACE_WITH_LOCAL_PASSWORD` with the password you set for
-`agency_os_app`. Do not commit `.env`; `.env.example` is the safe template.
-
-Initialize and validate Prisma from `agency-os\backend`:
-
-```powershell
-npx prisma validate
-npx prisma generate
-```
-
-Prisma schema is at `backend\prisma\schema.prisma`; its generated TypeScript
-client goes under `backend\src\generated\prisma`. Database models and migrations
-will be added when we define the application data model.
-
-## Build checks
-
-Run these commands from the `agency-os` directory:
-
-```powershell
-Push-Location .\frontend
-npm run build
-Pop-Location
-
-Push-Location .\backend
-npm run build
-Pop-Location
-```
+See [API_DOCUMENTATION.md](API_DOCUMENTATION.md) for the REST API.
