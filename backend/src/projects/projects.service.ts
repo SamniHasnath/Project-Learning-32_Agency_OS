@@ -1,109 +1,79 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateProjectDto, UpdateProjectDto } from './dto/project.dto';
 
 @Injectable()
 export class ProjectsService {
-  private memoryProjects = [
-    {
-      id: 'p1',
-      name: 'E-Commerce Platform Redesign',
-      description: 'Next.js & Tailwind responsive store architecture with Stripe checkout',
-      status: 'IN_PROGRESS',
-      budget: 18500,
-      clientId: 'c1',
-      client: { id: 'c1', name: 'Acme Corporation', email: 'contact@acmecorp.com' },
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 'p2',
-      name: 'Brand Identity & Design System',
-      description: 'Complete UI component library, design tokens, and branding guidelines',
-      status: 'COMPLETED',
-      budget: 9200,
-      clientId: 'c2',
-      client: { id: 'c2', name: 'Globex Enterprise', email: 'hello@globex.io' },
-      createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-  ];
+  constructor(private readonly prisma: PrismaService) {}
 
-  constructor(private prisma: PrismaService) {}
-
-  async findAll() {
-    if (this.prisma.isConnected) {
-      try {
-        return await this.prisma.project.findMany({
-          include: { client: true },
-          orderBy: { createdAt: 'desc' },
-        });
-      } catch (e) {
-        console.warn('DB error, using memory fallback:', e?.message);
-      }
-    }
-    return this.memoryProjects;
+  findAll(agencyId: string, clientId?: string) {
+    return this.prisma.project.findMany({
+      where: { agencyId, ...(clientId ? { clientId } : {}) },
+      include: { client: { select: { id: true, name: true, company: true } }, _count: { select: { quotations: true, invoices: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
-  async findOne(id: string) {
-    if (this.prisma.isConnected) {
-      try {
-        const project = await this.prisma.project.findUnique({
-          where: { id },
-          include: { client: true, quotations: true, invoices: true },
-        });
-        if (project) return project;
-      } catch (e) {
-        console.warn('DB error, using memory fallback:', e?.message);
-      }
-    }
-    const project = this.memoryProjects.find((p) => p.id === id);
-    if (!project) throw new NotFoundException(`Project with ID ${id} not found`);
+  async findOne(agencyId: string, id: string) {
+    const project = await this.prisma.project.findFirst({
+      where: { id, agencyId },
+      include: {
+        client: { select: { id: true, name: true, company: true, email: true } },
+        quotations: { orderBy: { createdAt: 'desc' } },
+        invoices: { orderBy: { createdAt: 'desc' } },
+        _count: { select: { quotations: true, invoices: true } },
+      },
+    });
+    if (!project) throw new NotFoundException('Project not found');
     return project;
   }
 
-  async create(data: any) {
-    if (this.prisma.isConnected) {
-      try {
-        return await this.prisma.project.create({ data, include: { client: true } });
-      } catch (e) {
-        console.warn('DB error, creating in memory:', e?.message);
-      }
-    }
-    const newProject = {
-      id: `proj-${Date.now()}`,
-      name: data.name || 'New Project',
-      description: data.description,
-      status: data.status || 'IN_PROGRESS',
-      budget: Number(data.budget || 0),
-      clientId: data.clientId || 'c1',
-      client: { id: data.clientId || 'c1', name: 'Acme Corporation', email: 'contact@acmecorp.com' },
-      createdAt: new Date().toISOString(),
-    };
-    this.memoryProjects.unshift(newProject);
-    return newProject;
+  async create(agencyId: string, dto: CreateProjectDto) {
+    await this.assertClient(agencyId, dto.clientId);
+    return this.prisma.project.create({
+      data: {
+        agencyId,
+        name: dto.name.trim(),
+        description: dto.description?.trim() || null,
+        clientId: dto.clientId,
+        status: dto.status,
+        budget: dto.budget ?? 0,
+        startDate: dto.startDate ? new Date(dto.startDate) : null,
+        endDate: dto.endDate ? new Date(dto.endDate) : null,
+      },
+      include: { client: { select: { id: true, name: true, company: true } } },
+    });
   }
 
-  async update(id: string, data: any) {
-    if (this.prisma.isConnected) {
-      try {
-        return await this.prisma.project.update({ where: { id }, data, include: { client: true } });
-      } catch (e) {
-        console.warn('DB error, updating memory:', e?.message);
-      }
-    }
-    const index = this.memoryProjects.findIndex((p) => p.id === id);
-    if (index === -1) throw new NotFoundException(`Project with ID ${id} not found`);
-    this.memoryProjects[index] = { ...this.memoryProjects[index], ...data };
-    return this.memoryProjects[index];
+  async update(agencyId: string, id: string, dto: UpdateProjectDto) {
+    await this.findOne(agencyId, id);
+    if (dto.clientId) await this.assertClient(agencyId, dto.clientId);
+    return this.prisma.project.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.description !== undefined ? { description: dto.description.trim() || null } : {}),
+        ...(dto.clientId ? { clientId: dto.clientId } : {}),
+        ...(dto.status ? { status: dto.status } : {}),
+        ...(dto.budget !== undefined ? { budget: dto.budget } : {}),
+        ...(dto.startDate !== undefined ? { startDate: dto.startDate ? new Date(dto.startDate) : null } : {}),
+        ...(dto.endDate !== undefined ? { endDate: dto.endDate ? new Date(dto.endDate) : null } : {}),
+      },
+      include: { client: { select: { id: true, name: true, company: true } } },
+    });
   }
 
-  async remove(id: string) {
-    if (this.prisma.isConnected) {
-      try {
-        return await this.prisma.project.delete({ where: { id } });
-      } catch (e) {
-        console.warn('DB error, deleting from memory:', e?.message);
-      }
+  async remove(agencyId: string, id: string) {
+    const project = await this.findOne(agencyId, id);
+    if (project._count.quotations || project._count.invoices) {
+      throw new ConflictException('This project has documents. Mark it CANCELLED or COMPLETED instead.');
     }
-    this.memoryProjects = this.memoryProjects.filter((p) => p.id !== id);
+    await this.prisma.project.delete({ where: { id } });
     return { success: true };
+  }
+
+  private async assertClient(agencyId: string, clientId: string) {
+    const client = await this.prisma.client.findFirst({ where: { id: clientId, agencyId }, select: { id: true } });
+    if (!client) throw new BadRequestException('Client not found');
   }
 }
