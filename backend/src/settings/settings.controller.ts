@@ -16,7 +16,10 @@ export class SettingsController {
   }
 
   @Patch()
-  updateSettings(@CurrentAgency() agencyId: string, @Body() dto: UpdateSettingsDto) {
+  updateSettings(
+    @CurrentAgency() agencyId: string,
+    @Body() dto: UpdateSettingsDto,
+  ) {
     return this.settings.updateSettings(agencyId, dto);
   }
 }
