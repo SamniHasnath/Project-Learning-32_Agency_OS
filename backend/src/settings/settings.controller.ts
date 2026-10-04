@@ -1,17 +1,22 @@
-import { Controller, Get, Patch, Body } from '@nestjs/common';
+import { Body, Controller, Get, Patch } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { CurrentAgency } from '../auth/auth-user';
+import { UpdateSettingsDto } from './dto/settings.dto';
 import { SettingsService } from './settings.service';
 
-@Controller('api/settings')
+@ApiTags('settings')
+@ApiBearerAuth()
+@Controller('settings')
 export class SettingsController {
-  constructor(private readonly settingsService: SettingsService) {}
+  constructor(private readonly settings: SettingsService) {}
 
   @Get()
-  getSettings() {
-    return this.settingsService.getSettings();
+  getSettings(@CurrentAgency() agencyId: string) {
+    return this.settings.getSettings(agencyId);
   }
 
   @Patch()
-  updateSettings(@Body() data: any) {
-    return this.settingsService.updateSettings(data);
+  updateSettings(@CurrentAgency() agencyId: string, @Body() dto: UpdateSettingsDto) {
+    return this.settings.updateSettings(agencyId, dto);
   }
 }
