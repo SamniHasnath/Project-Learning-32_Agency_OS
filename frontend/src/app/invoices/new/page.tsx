@@ -1,3 +1,7 @@
-import { WorkspaceForm } from "@/components/workspace/workspace-ui";
+"use client";
 
-export default function NewInvoicePage() { return <WorkspaceForm kind="invoices" />; }
+import { DocumentForm } from "@/features/documents/components/document-form";
+
+export default function NewInvoicePage() {
+  return <DocumentForm kind="invoice" />;
+}
