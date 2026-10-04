@@ -30,11 +30,15 @@ const day = (offset: number) => {
 };
 
 async function main() {
-  const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
+  const app = await NestFactory.createApplicationContext(AppModule, {
+    logger: ['error', 'warn'],
+  });
   try {
     const prisma = app.get(PrismaService);
     if (await prisma.user.findUnique({ where: { email: DEMO_EMAIL } })) {
-      console.log(`Demo data already present — log in with ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
+      console.log(
+        `Demo data already present — log in with ${DEMO_EMAIL} / ${DEMO_PASSWORD}`,
+      );
       return;
     }
 
@@ -80,11 +84,22 @@ async function main() {
     });
 
     const projects = app.get(ProjectsService);
-    const website = await projects.create(a, { name: 'Website redesign', clientId: globex.id, budget: 24000, status: 'IN_PROGRESS' });
-    const packaging = await projects.create(a, { name: 'Packaging system', clientId: fieldwork.id, budget: 9800, status: 'IN_PROGRESS' });
+    const website = await projects.create(a, {
+      name: 'Website redesign',
+      clientId: globex.id,
+      budget: 24000,
+      status: 'IN_PROGRESS',
+    });
+    const packaging = await projects.create(a, {
+      name: 'Packaging system',
+      clientId: fieldwork.id,
+      budget: 9800,
+      status: 'IN_PROGRESS',
+    });
 
     const quotations = app.get(QuotationsService);
-    const terms = '50% deposit on acceptance, balance on delivery. Payment due within 14 days of invoice.';
+    const terms =
+      '50% deposit on acceptance, balance on delivery. Payment due within 14 days of invoice.';
 
     await quotations.create(a, u, {
       clientId: acme.id,
@@ -92,9 +107,21 @@ async function main() {
       expiryDate: day(30),
       taxRate: 10,
       items: [
-        { description: 'Discovery workshop & brand strategy', quantity: 1, unitPrice: 2400 },
-        { description: 'Logo suite & visual identity', quantity: 1, unitPrice: 4200 },
-        { description: 'Brand guidelines (40 pages)', quantity: 1, unitPrice: 1800 },
+        {
+          description: 'Discovery workshop & brand strategy',
+          quantity: 1,
+          unitPrice: 2400,
+        },
+        {
+          description: 'Logo suite & visual identity',
+          quantity: 1,
+          unitPrice: 4200,
+        },
+        {
+          description: 'Brand guidelines (40 pages)',
+          quantity: 1,
+          unitPrice: 1800,
+        },
       ],
       notes: 'Includes two rounds of revisions per deliverable.',
       terms,
@@ -109,9 +136,21 @@ async function main() {
       discountType: 'PERCENTAGE',
       discountValue: 5,
       items: [
-        { description: 'UX research & information architecture', quantity: 1, unitPrice: 3800 },
-        { description: 'UI design — page templates', quantity: 8, unitPrice: 650 },
-        { description: 'Next.js front-end development (days)', quantity: 12, unitPrice: 720 },
+        {
+          description: 'UX research & information architecture',
+          quantity: 1,
+          unitPrice: 3800,
+        },
+        {
+          description: 'UI design — page templates',
+          quantity: 8,
+          unitPrice: 650,
+        },
+        {
+          description: 'Next.js front-end development (days)',
+          quantity: 12,
+          unitPrice: 720,
+        },
       ],
       terms,
     });
@@ -126,22 +165,42 @@ async function main() {
       discountType: 'FIXED',
       discountValue: 200,
       items: [
-        { description: 'Packaging concept exploration', quantity: 1, unitPrice: 2200 },
-        { description: 'Bag & label artwork (per SKU)', quantity: 6, unitPrice: 450 },
-        { description: 'Print-ready production files', quantity: 1, unitPrice: 900 },
+        {
+          description: 'Packaging concept exploration',
+          quantity: 1,
+          unitPrice: 2200,
+        },
+        {
+          description: 'Bag & label artwork (per SKU)',
+          quantity: 6,
+          unitPrice: 450,
+        },
+        {
+          description: 'Print-ready production files',
+          quantity: 1,
+          unitPrice: 900,
+        },
       ],
       notes: 'Printer liaison included.',
       terms,
     });
     await quotations.changeStatus(a, u, accepted.id, { status: 'SENT' });
     await quotations.changeStatus(a, u, accepted.id, { status: 'ACCEPTED' });
-    const converted = await quotations.convertToInvoice(a, u, accepted.id, { dueDate: day(14) });
+    const converted = await quotations.convertToInvoice(a, u, accepted.id, {
+      dueDate: day(14),
+    });
 
     const rejected = await quotations.create(a, u, {
       clientId: acme.id,
       title: 'Social campaign creative',
       expiryDate: day(15),
-      items: [{ description: 'Campaign concept & 12 social assets', quantity: 1, unitPrice: 3800 }],
+      items: [
+        {
+          description: 'Campaign concept & 12 social assets',
+          quantity: 1,
+          unitPrice: 3800,
+        },
+      ],
     });
     await quotations.changeStatus(a, u, rejected.id, { status: 'SENT' });
     await quotations.changeStatus(a, u, rejected.id, { status: 'REJECTED' });
@@ -150,7 +209,12 @@ async function main() {
     const payments = app.get(PaymentsService);
 
     await invoices.changeStatus(a, u, converted.id, { status: 'SENT' });
-    await payments.create(a, u, { invoiceId: converted.id, amount: 3000, method: 'BANK_TRANSFER', reference: 'WIRE-55120' });
+    await payments.create(a, u, {
+      invoiceId: converted.id,
+      amount: 3000,
+      method: 'BANK_TRANSFER',
+      reference: 'WIRE-55120',
+    });
 
     const retainer = await invoices.create(a, u, {
       clientId: globex.id,
@@ -158,22 +222,39 @@ async function main() {
       reference: 'PO-7781',
       dueDate: day(10),
       taxRate: 8.5,
-      items: [{ description: 'Design & development retainer (40 h)', quantity: 40, unitPrice: 95 }],
+      items: [
+        {
+          description: 'Design & development retainer (40 h)',
+          quantity: 40,
+          unitPrice: 95,
+        },
+      ],
     });
     await invoices.changeStatus(a, u, retainer.id, { status: 'SENT' });
-    await payments.create(a, u, { invoiceId: retainer.id, amount: Number(retainer.total), method: 'CREDIT_CARD', reference: 'CARD-1022' });
+    await payments.create(a, u, {
+      invoiceId: retainer.id,
+      amount: Number(retainer.total),
+      method: 'CREDIT_CARD',
+      reference: 'CARD-1022',
+    });
 
     await invoices.create(a, u, {
       clientId: acme.id,
       title: 'Photography day rate',
       taxRate: 10,
       items: [
-        { description: 'On-location product photography (day)', quantity: 1, unitPrice: 1600 },
+        {
+          description: 'On-location product photography (day)',
+          quantity: 1,
+          unitPrice: 1600,
+        },
         { description: 'Retouching (per image)', quantity: 25, unitPrice: 18 },
       ],
     });
 
-    console.log(`Seeded demo agency. Log in with ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
+    console.log(
+      `Seeded demo agency. Log in with ${DEMO_EMAIL} / ${DEMO_PASSWORD}`,
+    );
   } finally {
     await app.close();
   }
