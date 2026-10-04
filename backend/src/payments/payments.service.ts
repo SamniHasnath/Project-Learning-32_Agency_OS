@@ -1,113 +1,97 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { AuditService } from '../common/audit/audit.service';
+import { lockDocument } from '../common/documents/row-lock';
+import { statusAfterPayment } from '../common/documents/status-workflow';
+import { NumberingService } from '../common/numbering/numbering.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreatePaymentDto } from './dto/payment.dto';
+
+const PAYMENT_INCLUDE = {
+  invoice: { select: { id: true, number: true, title: true, currency: true, clientSnapshot: true, total: true, outstandingAmount: true, status: true } },
+} satisfies Prisma.PaymentInclude;
 
 @Injectable()
 export class PaymentsService {
-  private memoryPayments = [
-    {
-      id: 'pay1',
-      paymentNumber: 'PAY-2026-0001',
-      invoiceId: 'i1',
-      invoice: {
-        id: 'i1',
-        invoiceNumber: 'INV-2026-0001',
-        title: 'Brand Identity Design Milestone 1',
-        client: { name: 'Globex Enterprise', email: 'hello@globex.io' },
-      },
-      amount: 9200,
-      paymentMethod: 'BANK_TRANSFER',
-      paymentDate: new Date().toISOString(),
-      reference: 'WIRE-9938472',
-      notes: 'Full payment received',
-    },
-  ];
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly numbering: NumberingService,
+    private readonly audit: AuditService,
+  ) {}
 
-  constructor(private prisma: PrismaService) {}
-
-  async findAll() {
-    if (this.prisma.isConnected) {
-      try {
-        return await this.prisma.payment.findMany({
-          include: { invoice: { include: { client: true } } },
-          orderBy: { createdAt: 'desc' },
-        });
-      } catch (e) {
-        console.warn('DB error, using memory fallback:', e?.message);
-      }
-    }
-    return this.memoryPayments;
+  findAll(agencyId: string, invoiceId?: string) {
+    return this.prisma.payment.findMany({
+      where: { agencyId, ...(invoiceId ? { invoiceId } : {}) },
+      include: PAYMENT_INCLUDE,
+      orderBy: [{ paymentDate: 'desc' }, { createdAt: 'desc' }],
+    });
   }
 
-  async findOne(id: string) {
-    if (this.prisma.isConnected) {
-      try {
-        const payment = await this.prisma.payment.findUnique({
-          where: { id },
-          include: { invoice: { include: { client: true } } },
-        });
-        if (payment) return payment;
-      } catch (e) {
-        console.warn('DB error, using memory fallback:', e?.message);
-      }
-    }
-    const payment = this.memoryPayments.find((p) => p.id === id);
-    if (!payment) throw new NotFoundException(`Payment with ID ${id} not found`);
+  async findOne(agencyId: string, id: string) {
+    const payment = await this.prisma.payment.findFirst({ where: { id, agencyId }, include: PAYMENT_INCLUDE });
+    if (!payment) throw new NotFoundException('Payment not found');
     return payment;
   }
 
-  async create(dto: any) {
-    const { invoiceId, amount, paymentMethod, reference, notes } = dto;
-    const numAmount = Number(amount);
-    if (isNaN(numAmount) || numAmount <= 0) {
-      throw new BadRequestException('Payment amount must be greater than 0');
-    }
+  /**
+   * Records a (partial or full) payment against an invoice.
+   *
+   * The invoice row is locked (SELECT … FOR UPDATE) before its outstanding
+   * amount is read, so two simultaneous payments cannot both pass the
+   * overpayment check. Paid/outstanding are recomputed from stored Decimal
+   * values, never taken from the request.
+   */
+  async create(agencyId: string, userId: string, dto: CreatePaymentDto) {
+    const amount = new Prisma.Decimal(dto.amount);
+    if (amount.lte(0)) throw new BadRequestException('Payment amount must be greater than 0');
 
-    if (this.prisma.isConnected) {
-      try {
-        const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
-        if (invoice) {
-          const count = await this.prisma.payment.count();
-          const paymentNumber = `PAY-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
-          const payment = await this.prisma.payment.create({
-            data: { paymentNumber, invoiceId, amount: numAmount, paymentMethod: paymentMethod || 'BANK_TRANSFER', reference, notes },
-            include: { invoice: { include: { client: true } } },
-          });
+    return this.prisma.$transaction(async (tx) => {
+      await lockDocument(tx, 'invoices', dto.invoiceId, agencyId);
+      const invoice = await tx.invoice.findUniqueOrThrow({ where: { id: dto.invoiceId } });
 
-          const newPaidAmount = invoice.paidAmount + numAmount;
-          const newBalance = Math.max(0, invoice.totalAmount - newPaidAmount);
-          const newStatus = newBalance === 0 ? 'PAID' : 'PARTIALLY_PAID';
-
-          await this.prisma.invoice.update({
-            where: { id: invoiceId },
-            data: { paidAmount: newPaidAmount, balance: newBalance, status: newStatus },
-          });
-
-          return payment;
-        }
-      } catch (e) {
-        console.warn('DB error, creating payment in memory:', e?.message);
+      if (invoice.status === 'DRAFT') throw new ConflictException('Send the invoice before recording payments');
+      if (invoice.status === 'VOID') throw new ConflictException('Cannot record payments on a VOID invoice');
+      if (invoice.status === 'PAID' || invoice.outstandingAmount.lte(0)) {
+        throw new ConflictException('This invoice is already fully paid');
       }
-    }
+      if (amount.gt(invoice.outstandingAmount)) {
+        throw new BadRequestException(
+          `Payment of ${amount.toFixed(2)} exceeds the outstanding amount of ${invoice.outstandingAmount.toFixed(2)}`,
+        );
+      }
 
-    const count = this.memoryPayments.length;
-    const paymentNumber = `PAY-2026-${String(count + 1).padStart(4, '0')}`;
-    const newPayment = {
-      id: `pay-${Date.now()}`,
-      paymentNumber,
-      invoiceId: invoiceId || 'i1',
-      invoice: {
-        id: invoiceId || 'i1',
-        invoiceNumber: 'INV-2026-0001',
-        title: 'Brand Identity Design Milestone 1',
-        client: { name: 'Globex Enterprise', email: 'hello@globex.io' },
-      },
-      amount: numAmount,
-      paymentMethod: paymentMethod || 'BANK_TRANSFER',
-      paymentDate: new Date().toISOString(),
-      reference: reference || `REF-${Date.now()}`,
-      notes: notes || 'Payment processed',
-    };
-    this.memoryPayments.unshift(newPayment);
-    return newPayment;
+      const paidAmount = invoice.paidAmount.add(amount);
+      const outstandingAmount = invoice.total.sub(paidAmount);
+      const status = statusAfterPayment(outstandingAmount.isZero(), invoice.dueDate);
+      const number = await this.numbering.next(tx, agencyId, 'PAY');
+
+      const payment = await tx.payment.create({
+        data: {
+          agencyId,
+          number,
+          invoiceId: invoice.id,
+          amount,
+          method: dto.method ?? 'BANK_TRANSFER',
+          paymentDate: dto.paymentDate ? new Date(dto.paymentDate) : new Date(),
+          reference: dto.reference?.trim() || null,
+          notes: dto.notes?.trim() || null,
+        },
+        include: PAYMENT_INCLUDE,
+      });
+      await tx.invoice.update({
+        where: { id: invoice.id },
+        data: { paidAmount, outstandingAmount, status, ...(status === 'PAID' ? { paidAt: new Date() } : {}) },
+      });
+      await this.audit.log(tx, {
+        agencyId,
+        userId,
+        action: 'payment.recorded',
+        entity: 'Invoice',
+        entityId: invoice.id,
+        details: { paymentId: payment.id, amount: amount.toFixed(2), status },
+      });
+      // Re-read so the embedded invoice reflects the new balance.
+      return tx.payment.findUniqueOrThrow({ where: { id: payment.id }, include: PAYMENT_INCLUDE });
+    });
   }
 }
