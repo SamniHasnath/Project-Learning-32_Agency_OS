@@ -1,178 +1,105 @@
-import { fetchApi } from "./api";
+import { apiBlob, apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api";
+import type {
+  Agency,
+  AuthSession,
+  Client,
+  ClientDetail,
+  DashboardMetrics,
+  DocumentOverview,
+  DocumentTemplate,
+  DocumentType,
+  Invoice,
+  InvoiceInput,
+  InvoiceStatus,
+  Payment,
+  PaymentMethod,
+  Project,
+  ProjectDetail,
+  Quotation,
+  QuotationInput,
+  QuotationStatus,
+  RecentActivity,
+  TemplateBranding,
+  TemplateLayout,
+  User,
+} from "@/types/models";
 
-// Types
-export type Client = {
-  id: string;
-  name: string;
-  email: string;
-  phone?: string;
-  company?: string;
-  address?: string;
-  taxId?: string;
-  notes?: string;
-  status: "ACTIVE" | "INACTIVE" | "LEAD";
-  createdAt: string;
-  _count?: { projects: number; quotations: number; invoices: number };
+const qs = (params: Record<string, string | undefined>) => {
+  const entries = Object.entries(params).filter(([, v]) => v);
+  return entries.length ? `?${new URLSearchParams(entries as [string, string][]).toString()}` : "";
 };
 
-export type Project = {
-  id: string;
-  name: string;
-  description?: string;
-  status: "PLANNING" | "IN_PROGRESS" | "ON_HOLD" | "COMPLETED" | "CANCELLED";
-  budget: number;
-  startDate?: string;
-  endDate?: string;
-  clientId: string;
-  client?: Client;
-  createdAt: string;
+export const AuthApi = {
+  login: (email: string, password: string) => apiPost<AuthSession>("/auth/login", { email, password }),
+  register: (data: { agencyName: string; name: string; email: string; password: string }) =>
+    apiPost<AuthSession>("/auth/register", data),
+  me: () => apiGet<{ user: User; agency: Agency }>("/auth/me"),
 };
 
-export type QuotationItem = {
-  id?: string;
-  description: string;
-  quantity: number;
-  unitPrice: number;
-  amount: number;
-};
-
-export type Quotation = {
-  id: string;
-  quoteNumber: string;
-  title: string;
-  clientId: string;
-  client?: Client;
-  projectId?: string;
-  project?: Project;
-  status: "DRAFT" | "SENT" | "ACCEPTED" | "REJECTED" | "EXPIRED";
-  validUntil: string;
-  subtotal: number;
-  taxRate: number;
-  taxAmount: number;
-  totalAmount: number;
-  notes?: string;
-  terms?: string;
-  items: QuotationItem[];
-  createdAt: string;
-};
-
-export type InvoiceItem = {
-  id?: string;
-  description: string;
-  quantity: number;
-  unitPrice: number;
-  amount: number;
-};
-
-export type Payment = {
-  id: string;
-  paymentNumber: string;
-  invoiceId: string;
-  invoice?: Invoice;
-  amount: number;
-  paymentMethod: string;
-  paymentDate: string;
-  reference?: string;
-  notes?: string;
-};
-
-export type Invoice = {
-  id: string;
-  invoiceNumber: string;
-  title: string;
-  clientId: string;
-  client?: Client;
-  projectId?: string;
-  project?: Project;
-  quotationId?: string;
-  status: "DRAFT" | "SENT" | "PARTIALLY_PAID" | "PAID" | "OVERDUE" | "CANCELLED";
-  issueDate: string;
-  dueDate: string;
-  subtotal: number;
-  taxRate: number;
-  taxAmount: number;
-  totalAmount: number;
-  paidAmount: number;
-  balance: number;
-  notes?: string;
-  terms?: string;
-  items: InvoiceItem[];
-  payments?: Payment[];
-  createdAt: string;
-};
-
-export type AgencySettings = {
-  id: string;
-  name: string;
-  email: string;
-  phone?: string;
-  website?: string;
-  taxId?: string;
-  currency: string;
-  address?: string;
-  logoUrl?: string;
-};
-
-export type DashboardMetrics = {
-  totalRevenue: number;
-  pendingAmount: number;
-  activeProjects: number;
-  totalClients: number;
-  activeQuotations: number;
-};
-
-// Client API Calls
+export type ClientInput = Partial<Pick<Client, "name" | "email" | "phone" | "company" | "address" | "taxId" | "notes" | "status">>;
 export const ClientsApi = {
-  getAll: () => fetchApi<Client[]>("/api/clients"),
-  getOne: (id: string) => fetchApi<Client>(`/api/clients/${id}`),
-  create: (data: Partial<Client>) => fetchApi<Client>("/api/clients", { method: "POST", body: JSON.stringify(data) }),
-  update: (id: string, data: Partial<Client>) => fetchApi<Client>(`/api/clients/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  delete: (id: string) => fetchApi<{ success: boolean }>(`/api/clients/${id}`, { method: "DELETE" }),
+  list: (search?: string) => apiGet<Client[]>(`/clients${qs({ search })}`),
+  get: (id: string) => apiGet<ClientDetail>(`/clients/${id}`),
+  create: (data: ClientInput) => apiPost<Client>("/clients", data),
+  update: (id: string, data: ClientInput) => apiPatch<Client>(`/clients/${id}`, data),
+  remove: (id: string) => apiDelete<{ success: boolean }>(`/clients/${id}`),
 };
 
-// Projects API Calls
+export type ProjectInput = { name?: string; description?: string; clientId?: string; status?: Project["status"]; budget?: number; startDate?: string; endDate?: string };
 export const ProjectsApi = {
-  getAll: () => fetchApi<Project[]>("/api/projects"),
-  getOne: (id: string) => fetchApi<Project>(`/api/projects/${id}`),
-  create: (data: Partial<Project>) => fetchApi<Project>("/api/projects", { method: "POST", body: JSON.stringify(data) }),
-  update: (id: string, data: Partial<Project>) => fetchApi<Project>(`/api/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  delete: (id: string) => fetchApi<{ success: boolean }>(`/api/projects/${id}`, { method: "DELETE" }),
+  list: (clientId?: string) => apiGet<Project[]>(`/projects${qs({ clientId })}`),
+  get: (id: string) => apiGet<ProjectDetail>(`/projects/${id}`),
+  create: (data: ProjectInput) => apiPost<Project>("/projects", data),
+  update: (id: string, data: ProjectInput) => apiPatch<Project>(`/projects/${id}`, data),
+  remove: (id: string) => apiDelete<{ success: boolean }>(`/projects/${id}`),
 };
 
-// Quotations API Calls
 export const QuotationsApi = {
-  getAll: () => fetchApi<Quotation[]>("/api/quotations"),
-  getOne: (id: string) => fetchApi<Quotation>(`/api/quotations/${id}`),
-  create: (data: Partial<Quotation>) => fetchApi<Quotation>("/api/quotations", { method: "POST", body: JSON.stringify(data) }),
-  update: (id: string, data: Partial<Quotation>) => fetchApi<Quotation>(`/api/quotations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  convertToInvoice: (id: string) => fetchApi<Invoice>(`/api/quotations/${id}/convert`, { method: "POST" }),
-  delete: (id: string) => fetchApi<{ success: boolean }>(`/api/quotations/${id}`, { method: "DELETE" }),
+  list: (filters: { status?: QuotationStatus; clientId?: string; search?: string } = {}) => apiGet<Quotation[]>(`/quotations${qs(filters)}`),
+  get: (id: string) => apiGet<Quotation>(`/quotations/${id}`),
+  create: (data: QuotationInput) => apiPost<Quotation>("/quotations", data),
+  update: (id: string, data: Partial<QuotationInput>) => apiPatch<Quotation>(`/quotations/${id}`, data),
+  setStatus: (id: string, status: QuotationStatus) => apiPatch<Quotation>(`/quotations/${id}/status`, { status }),
+  convertToInvoice: (id: string, data: { dueDate?: string; templateId?: string } = {}) =>
+    apiPost<Invoice>(`/quotations/${id}/convert-to-invoice`, data),
+  pdf: (id: string) => apiBlob(`/quotations/${id}/pdf`),
 };
 
-// Invoices API Calls
 export const InvoicesApi = {
-  getAll: () => fetchApi<Invoice[]>("/api/invoices"),
-  getOne: (id: string) => fetchApi<Invoice>(`/api/invoices/${id}`),
-  create: (data: Partial<Invoice>) => fetchApi<Invoice>("/api/invoices", { method: "POST", body: JSON.stringify(data) }),
-  update: (id: string, data: Partial<Invoice>) => fetchApi<Invoice>(`/api/invoices/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  delete: (id: string) => fetchApi<{ success: boolean }>(`/api/invoices/${id}`, { method: "DELETE" }),
+  list: (filters: { status?: InvoiceStatus; clientId?: string; search?: string } = {}) => apiGet<Invoice[]>(`/invoices${qs(filters)}`),
+  get: (id: string) => apiGet<Invoice>(`/invoices/${id}`),
+  create: (data: InvoiceInput) => apiPost<Invoice>("/invoices", data),
+  update: (id: string, data: Partial<InvoiceInput>) => apiPatch<Invoice>(`/invoices/${id}`, data),
+  setStatus: (id: string, status: InvoiceStatus) => apiPatch<Invoice>(`/invoices/${id}/status`, { status }),
+  payments: (id: string) => apiGet<Payment[]>(`/invoices/${id}/payments`),
+  pdf: (id: string) => apiBlob(`/invoices/${id}/pdf`),
 };
 
-// Payments API Calls
+export type PaymentInput = { invoiceId: string; amount: number; method?: PaymentMethod; paymentDate?: string; reference?: string; notes?: string };
 export const PaymentsApi = {
-  getAll: () => fetchApi<Payment[]>("/api/payments"),
-  getOne: (id: string) => fetchApi<Payment>(`/api/payments/${id}`),
-  create: (data: { invoiceId: string; amount: number; paymentMethod?: string; reference?: string; notes?: string }) =>
-    fetchApi<Payment>("/api/payments", { method: "POST", body: JSON.stringify(data) }),
+  list: (invoiceId?: string) => apiGet<Payment[]>(`/payments${qs({ invoiceId })}`),
+  get: (id: string) => apiGet<Payment>(`/payments/${id}`),
+  create: (data: PaymentInput) => apiPost<Payment>("/payments", data),
 };
 
-// Dashboard & Settings API Calls
+export type TemplateInput = { name: string; type: DocumentType; isDefault?: boolean; branding: TemplateBranding; layout: TemplateLayout };
+export const TemplatesApi = {
+  list: (type?: DocumentType) => apiGet<DocumentTemplate[]>(`/document-templates${qs({ type })}`),
+  get: (id: string) => apiGet<DocumentTemplate>(`/document-templates/${id}`),
+  create: (data: TemplateInput) => apiPost<DocumentTemplate>("/document-templates", data),
+  update: (id: string, data: Partial<Omit<TemplateInput, "type">>) => apiPatch<DocumentTemplate>(`/document-templates/${id}`, data),
+  setDefault: (id: string) => apiPost<DocumentTemplate>(`/document-templates/${id}/set-default`),
+  remove: (id: string) => apiDelete<{ success: boolean }>(`/document-templates/${id}`),
+};
+
 export const DashboardApi = {
-  getMetrics: () => fetchApi<DashboardMetrics>("/api/dashboard/metrics"),
-  getRecent: () => fetchApi<{ invoices: Invoice[]; quotations: Quotation[]; payments: Payment[] }>("/api/dashboard/recent"),
+  metrics: () => apiGet<DashboardMetrics>("/dashboard/metrics"),
+  recent: () => apiGet<RecentActivity>("/dashboard/recent"),
+  documents: () => apiGet<DocumentOverview>("/dashboard/documents"),
 };
 
+export type SettingsInput = Partial<Omit<Agency, "id">>;
 export const SettingsApi = {
-  get: () => fetchApi<AgencySettings>("/api/settings"),
-  update: (data: Partial<AgencySettings>) => fetchApi<AgencySettings>("/api/settings", { method: "PATCH", body: JSON.stringify(data) }),
+  get: () => apiGet<Agency>("/settings"),
+  update: (data: SettingsInput) => apiPatch<Agency>("/settings", data),
 };
