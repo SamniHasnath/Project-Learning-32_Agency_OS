@@ -15,13 +15,15 @@ export function pricingFields(calc: CalculatedDocument) {
 }
 
 export function itemRows(calc: CalculatedDocument) {
-  return calc.lines.map(({ position, description, quantity, unitPrice, lineTotal }) => ({
-    position,
-    description,
-    quantity,
-    unitPrice,
-    lineTotal,
-  }));
+  return calc.lines.map(
+    ({ position, description, quantity, unitPrice, lineTotal }) => ({
+      position,
+      description,
+      quantity,
+      unitPrice,
+      lineTotal,
+    }),
+  );
 }
 
 export function addDays(date: Date, days: number) {
@@ -32,8 +34,10 @@ export function addDays(date: Date, days: number) {
 
 /** Parses an ISO date and ensures `later` is not before `earlier` (by calendar day). */
 export function assertDateOrder(earlier: Date, later: Date, message: string) {
-  const day = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-  if (Number.isNaN(later.getTime()) || Number.isNaN(earlier.getTime())) throw new BadRequestException('Invalid date');
+  const day = (d: Date) =>
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  if (Number.isNaN(later.getTime()) || Number.isNaN(earlier.getTime()))
+    throw new BadRequestException('Invalid date');
   if (day(later) < day(earlier)) throw new BadRequestException(message);
 }
 
