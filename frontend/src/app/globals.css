@@ -21,65 +21,98 @@
   --font-mono: var(--font-geist-mono);
 }
 
-* {
-  box-sizing: border-box;
+/* Base element styles live in Tailwind's `base` layer and `.form-input` in
+   `components`, so utility classes (text-white, w-24, …) always win. */
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    min-height: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-height: 100vh;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  button,
+  a,
+  input {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  a {
+    color: var(--brand);
+    text-decoration: none;
+  }
+
+  table th,
+  table td {
+    border-bottom: 1px solid var(--table-border);
+  }
+
+  table thead {
+    background: var(--table-header);
+  }
 }
 
-html {
-  min-height: 100%;
-  scroll-behavior: smooth;
+@layer components {
+  .form-input {
+    display: block;
+    width: 100%;
+    min-height: 2.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    background: #fff;
+    padding: 0.55rem 0.75rem;
+    color: #0f172a;
+    font: inherit;
+    font-size: 0.875rem;
+  }
+
+  .form-input::placeholder {
+    color: #94a3b8;
+  }
+
+  .form-input:focus {
+    border-color: var(--brand);
+    outline: 2px solid #e1e3ff;
+    outline-offset: 1px;
+  }
+
+  .form-input:disabled {
+    background: #f8fafc;
+    color: #64748b;
+  }
 }
 
-body {
-  min-height: 100vh;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+/* ── Print: only the document sheet, with brand colours preserved ─────────── */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
 
-button,
-a,
-input {
-  -webkit-tap-highlight-color: transparent;
-}
+  .no-print {
+    display: none !important;
+  }
 
-a {
-  color: var(--brand);
-  text-decoration: none;
-}
+  body {
+    background: #fff;
+  }
 
-a:hover {
-  text-decoration: none;
-}
-
-table th,
-table td {
-  border-bottom: 1px solid var(--table-border);
-}
-
-table thead {
-  background: var(--table-header);
-}
-
-.form-input {
-  display: block;
-  width: 100%;
-  min-height: 2.5rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.5rem;
-  background: #fff;
-  padding: 0.55rem 0.75rem;
-  color: #0f172a;
-  font: inherit;
-  font-size: 0.875rem;
-}
-
-.form-input::placeholder {
-  color: #94a3b8;
-}
-
-.form-input:focus {
-  border-color: var(--brand);
-  outline: 2px solid #e1e3ff;
-  outline-offset: 1px;
+  .document-sheet {
+    max-width: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }
