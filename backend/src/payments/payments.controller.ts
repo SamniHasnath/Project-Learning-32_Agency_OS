@@ -1,22 +1,28 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { AuthUser } from '../auth/auth-user';
+import { CurrentUser } from '../auth/auth-user';
+import { CreatePaymentDto, ListPaymentsQuery } from './dto/payment.dto';
 import { PaymentsService } from './payments.service';
 
-@Controller('api/payments')
+@ApiTags('payments')
+@ApiBearerAuth()
+@Controller('payments')
 export class PaymentsController {
-  constructor(private readonly paymentsService: PaymentsService) {}
+  constructor(private readonly payments: PaymentsService) {}
 
   @Get()
-  findAll() {
-    return this.paymentsService.findAll();
+  findAll(@CurrentUser() user: AuthUser, @Query() query: ListPaymentsQuery) {
+    return this.payments.findAll(user.agencyId, query.invoiceId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.paymentsService.findOne(id);
+  findOne(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.payments.findOne(user.agencyId, id);
   }
 
   @Post()
-  create(@Body() data: any) {
-    return this.paymentsService.create(data);
+  create(@CurrentUser() user: AuthUser, @Body() dto: CreatePaymentDto) {
+    return this.payments.create(user.agencyId, user.userId, dto);
   }
 }
