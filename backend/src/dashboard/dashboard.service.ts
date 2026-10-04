@@ -1,142 +1,99 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { ClientsService } from '../clients/clients.service';
-import { ProjectsService } from '../projects/projects.service';
-import { InvoicesService } from '../invoices/invoices.service';
-import { QuotationsService } from '../quotations/quotations.service';
-import { PaymentsService } from '../payments/payments.service';
+
+const OPEN_INVOICE = ['SENT', 'PARTIALLY_PAID', 'OVERDUE'] as const;
+const zero = () => new Prisma.Decimal(0);
 
 @Injectable()
 export class DashboardService {
-  constructor(
-    private prisma: PrismaService,
-    private clientsService: ClientsService,
-    private projectsService: ProjectsService,
-    private invoicesService: InvoicesService,
-    private quotationsService: QuotationsService,
-    private paymentsService: PaymentsService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async getMetrics() {
-    if (this.prisma.isConnected) {
-      try {
-        const clientsCount = await this.prisma.client.count();
-        const projectsCount = await this.prisma.project.count({
-          where: { OR: [{ status: 'IN_PROGRESS' }, { status: 'PLANNING' }] },
-        });
-        const invoices = await this.prisma.invoice.findMany();
-        const totalRevenue = invoices
-          .filter((inv) => inv.status === 'PAID' || inv.status === 'PARTIALLY_PAID')
-          .reduce((acc, inv) => acc + (inv.paidAmount || 0), 0);
+  async getMetrics(agencyId: string) {
+    const since = new Date();
+    since.setUTCDate(1);
+    since.setUTCHours(0, 0, 0, 0);
+    since.setUTCMonth(since.getUTCMonth() - 11);
 
-        const pendingInvoices = invoices.filter((inv) => inv.status === 'SENT' || inv.status === 'PARTIALLY_PAID' || inv.status === 'OVERDUE');
-        const pendingAmount = pendingInvoices.reduce((acc, inv) => acc + (inv.balance || 0), 0);
-        const activeQuotations = await this.prisma.quotation.count({
-          where: { OR: [{ status: 'SENT' }, { status: 'DRAFT' }] },
-        });
+    const [revenue, outstanding, overdue, openQuotes, totalClients, activeProjects, recentPayments] = await Promise.all([
+      this.prisma.payment.aggregate({ where: { agencyId }, _sum: { amount: true } }),
+      this.prisma.invoice.aggregate({
+        where: { agencyId, status: { in: [...OPEN_INVOICE] } },
+        _sum: { outstandingAmount: true },
+        _count: true,
+      }),
+      this.prisma.invoice.aggregate({ where: { agencyId, status: 'OVERDUE' }, _sum: { outstandingAmount: true }, _count: true }),
+      this.prisma.quotation.aggregate({ where: { agencyId, status: { in: ['DRAFT', 'SENT'] } }, _sum: { total: true }, _count: true }),
+      this.prisma.client.count({ where: { agencyId } }),
+      this.prisma.project.count({ where: { agencyId, status: { in: ['PLANNING', 'IN_PROGRESS'] } } }),
+      this.prisma.payment.findMany({ where: { agencyId, paymentDate: { gte: since } }, select: { amount: true, paymentDate: true } }),
+    ]);
 
-        return {
-          totalRevenue,
-          pendingAmount,
-          activeProjects: projectsCount,
-          totalClients: clientsCount,
-          activeQuotations,
-        };
-      } catch (e) {
-        console.warn('DB error in Dashboard metrics, using memory fallback:', e?.message);
-      }
+    const months: { month: string; amount: Prisma.Decimal }[] = [];
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(since);
+      d.setUTCMonth(since.getUTCMonth() + i);
+      months.push({ month: d.toISOString().slice(0, 7), amount: zero() });
+    }
+    for (const p of recentPayments) {
+      const bucket = months.find((m) => m.month === p.paymentDate.toISOString().slice(0, 7));
+      if (bucket) bucket.amount = bucket.amount.add(p.amount);
     }
 
-    try {
-      const clients = await this.clientsService.findAll();
-      const projects = await this.projectsService.findAll();
-      const invoices = await this.invoicesService.findAll();
-      const quotations = await this.quotationsService.findAll();
-
-      const totalRevenue = invoices
-        .filter((inv: any) => inv.status === 'PAID' || inv.status === 'PARTIALLY_PAID')
-        .reduce((acc: number, inv: any) => acc + Number(inv.paidAmount || 0), 0);
-
-      const pendingInvoices = invoices.filter(
-        (inv: any) => inv.status === 'SENT' || inv.status === 'PARTIALLY_PAID' || inv.status === 'OVERDUE',
-      );
-      const pendingAmount = pendingInvoices.reduce((acc: number, inv: any) => acc + Number(inv.balance || 0), 0);
-
-      const activeProjects = projects.filter(
-        (p: any) => p.status === 'IN_PROGRESS' || p.status === 'PLANNING',
-      ).length;
-
-      const activeQuotations = quotations.filter(
-        (q: any) => q.status === 'SENT' || q.status === 'DRAFT',
-      ).length;
-
-      return {
-        totalRevenue,
-        pendingAmount,
-        activeProjects,
-        totalClients: clients.length,
-        activeQuotations,
-      };
-    } catch (err) {
-      console.error('Error fetching live fallback metrics:', err);
-      return {
-        totalRevenue: 0,
-        pendingAmount: 0,
-        activeProjects: 0,
-        totalClients: 0,
-        activeQuotations: 0,
-      };
-    }
+    return {
+      totalRevenue: revenue._sum.amount ?? zero(),
+      outstandingAmount: outstanding._sum.outstandingAmount ?? zero(),
+      openInvoices: outstanding._count,
+      overdueAmount: overdue._sum.outstandingAmount ?? zero(),
+      overdueInvoices: overdue._count,
+      openQuotationsValue: openQuotes._sum.total ?? zero(),
+      openQuotations: openQuotes._count,
+      totalClients,
+      activeProjects,
+      revenueByMonth: months,
+    };
   }
 
-  async getRecentActivity() {
-    if (this.prisma.isConnected) {
-      try {
-        const recentInvoices = await this.prisma.invoice.findMany({
-          take: 5,
-          orderBy: { createdAt: 'desc' },
-          include: { client: true },
-        });
+  async getRecentActivity(agencyId: string) {
+    const [quotations, invoices, payments] = await Promise.all([
+      this.prisma.quotation.findMany({ where: { agencyId }, orderBy: { updatedAt: 'desc' }, take: 5 }),
+      this.prisma.invoice.findMany({ where: { agencyId }, orderBy: { updatedAt: 'desc' }, take: 5 }),
+      this.prisma.payment.findMany({
+        where: { agencyId },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        include: { invoice: { select: { id: true, number: true, clientSnapshot: true, currency: true } } },
+      }),
+    ]);
+    return { quotations, invoices, payments };
+  }
 
-        const recentQuotations = await this.prisma.quotation.findMany({
-          take: 5,
-          orderBy: { createdAt: 'desc' },
-          include: { client: true },
-        });
-
-        const recentPayments = await this.prisma.payment.findMany({
-          take: 5,
-          orderBy: { createdAt: 'desc' },
-          include: { invoice: { include: { client: true } } },
-        });
-
-        return {
-          invoices: recentInvoices,
-          quotations: recentQuotations,
-          payments: recentPayments,
-        };
-      } catch (e) {
-        console.warn('DB error in Dashboard recent activity, using memory fallback:', e?.message);
-      }
-    }
-
-    try {
-      const invoices = await this.invoicesService.findAll();
-      const quotations = await this.quotationsService.findAll();
-      const payments = await this.paymentsService.findAll();
-
-      return {
-        invoices: invoices.slice(0, 5),
-        quotations: quotations.slice(0, 5),
-        payments: payments.slice(0, 5),
-      };
-    } catch (err) {
-      console.error('Error fetching recent activity:', err);
-      return {
-        invoices: [],
-        quotations: [],
-        payments: [],
-      };
-    }
+  /** Data for the Document Overview screen. */
+  async getDocumentOverview(agencyId: string) {
+    const now = new Date();
+    const soon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const [quotationGroups, invoiceGroups, expiringSoon, overdue, templates] = await Promise.all([
+      this.prisma.quotation.groupBy({ by: ['status'], where: { agencyId }, _count: true, _sum: { total: true } }),
+      this.prisma.invoice.groupBy({ by: ['status'], where: { agencyId }, _count: true, _sum: { total: true, outstandingAmount: true } }),
+      this.prisma.quotation.findMany({
+        where: { agencyId, status: 'SENT', expiryDate: { gte: now, lte: soon } },
+        orderBy: { expiryDate: 'asc' },
+        take: 10,
+      }),
+      this.prisma.invoice.findMany({ where: { agencyId, status: 'OVERDUE' }, orderBy: { dueDate: 'asc' }, take: 10 }),
+      this.prisma.documentTemplate.groupBy({ by: ['type'], where: { agencyId }, _count: true }),
+    ]);
+    return {
+      quotations: quotationGroups.map((g) => ({ status: g.status, count: g._count, total: g._sum.total ?? zero() })),
+      invoices: invoiceGroups.map((g) => ({
+        status: g.status,
+        count: g._count,
+        total: g._sum.total ?? zero(),
+        outstanding: g._sum.outstandingAmount ?? zero(),
+      })),
+      expiringSoon,
+      overdue,
+      templates: templates.map((t) => ({ type: t.type, count: t._count })),
+    };
   }
 }
