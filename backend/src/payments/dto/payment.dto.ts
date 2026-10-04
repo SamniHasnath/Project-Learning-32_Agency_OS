@@ -1,6 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentMethod } from '@prisma/client';
-import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class CreatePaymentDto {
   @ApiProperty({ format: 'uuid' })
@@ -13,7 +23,10 @@ export class CreatePaymentDto {
   @Max(1_000_000_000)
   amount: number;
 
-  @ApiPropertyOptional({ enum: PaymentMethod, default: PaymentMethod.BANK_TRANSFER })
+  @ApiPropertyOptional({
+    enum: PaymentMethod,
+    default: PaymentMethod.BANK_TRANSFER,
+  })
   @IsOptional()
   @IsEnum(PaymentMethod)
   method?: PaymentMethod;
