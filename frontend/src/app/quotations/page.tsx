@@ -1,33 +1,68 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { WorkspaceList } from "@/components/workspace/workspace-ui";
-import { QuotationsApi, type Quotation } from "@/services/agency-api";
-import type { WorkspaceRecord } from "@/types/domain";
+import Link from "next/link";
+import { DataTable } from "@/components/tables/data-table";
+import { buttonClass, ErrorState, LoadingState, PageHeading, StatusBadge } from "@/components/ui/primitives";
+import { QUOTATION_STATUSES } from "@/features/documents/status";
+import { useApi } from "@/hooks/use-api";
+import { date, money } from "@/lib/format";
+import { QuotationsApi } from "@/services/agency-api";
+import type { Quotation } from "@/types/models";
 
 export default function QuotationsPage() {
-  const [records, setRecords] = useState<WorkspaceRecord[]>([]);
+  const { data, error, loading, reload } = useApi(() => QuotationsApi.list(), []);
+  const newButton = (
+    <Link href="/quotations/new" className={buttonClass.primary}>
+      + New quotation
+    </Link>
+  );
 
-  useEffect(() => {
-    async function loadQuotations() {
-      try {
-        const quotations = await QuotationsApi.getAll();
-        const mapped: WorkspaceRecord[] = quotations.map((q: Quotation) => ({
-          id: q.id,
-          title: `${q.quoteNumber} - ${q.title}`,
-          subtitle: q.client?.name || "Client",
-          status: q.status === "ACCEPTED" ? "Accepted" : q.status === "SENT" ? "Sent" : "Draft",
-          amount: q.totalAmount,
-          date: q.createdAt ? q.createdAt.split("T")[0] : new Date().toISOString().split("T")[0],
-          secondary: `Valid until ${q.validUntil ? q.validUntil.split("T")[0] : "—"}`,
-        }));
-        setRecords(mapped);
-      } catch (err) {
-        console.warn("Using offline fallback for quotations list:", err);
-      }
-    }
-    loadQuotations();
-  }, []);
-
-  return <WorkspaceList kind="quotations" records={records} />;
+  return (
+    <>
+      <PageHeading title="Quotations" description="Create, send and track quotations through acceptance and invoicing." actions={newButton} />
+      {loading && !data ? (
+        <LoadingState />
+      ) : error ? (
+        <ErrorState message={error} onRetry={reload} />
+      ) : (
+        <DataTable<Quotation>
+          rows={data ?? []}
+          rowHref={(q) => `/quotations/${q.id}`}
+          searchText={(q) => `${q.number} ${q.title} ${q.clientSnapshot.name} ${q.clientSnapshot.company ?? ""}`}
+          searchPlaceholder="Search by number, title or client…"
+          statusOf={(q) => q.status}
+          statuses={QUOTATION_STATUSES}
+          empty={{ title: "No quotations yet", description: "Create your first quotation to get started.", action: newButton }}
+          columns={[
+            {
+              header: "Quotation",
+              sortValue: (q) => q.number,
+              cell: (q) => (
+                <>
+                  <span className="font-semibold">{q.number}</span>
+                  <span className="mt-0.5 block text-xs text-slate-500">{q.title}</span>
+                </>
+              ),
+            },
+            { header: "Client", sortValue: (q) => q.clientSnapshot.company || q.clientSnapshot.name, cell: (q) => q.clientSnapshot.company || q.clientSnapshot.name },
+            { header: "Status", sortValue: (q) => q.status, cell: (q) => <StatusBadge status={q.status} /> },
+            { header: "Total", align: "right", sortValue: (q) => Number(q.total), cell: (q) => <span className="font-medium">{money(q.total, q.currency)}</span> },
+            { header: "Issued", sortValue: (q) => q.issueDate, cell: (q) => date(q.issueDate) },
+            { header: "Expires", sortValue: (q) => q.expiryDate, cell: (q) => date(q.expiryDate) },
+            {
+              header: "Invoice",
+              cell: (q) =>
+                q.invoice ? (
+                  <Link href={`/invoices/${q.invoice.id}`} className="text-sm font-medium">
+                    {q.invoice.number}
+                  </Link>
+                ) : (
+                  <span className="text-slate-400">—</span>
+                ),
+            },
+          ]}
+        />
+      )}
+    </>
+  );
 }
