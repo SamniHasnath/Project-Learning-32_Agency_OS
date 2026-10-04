@@ -1,10 +1,23 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuditService } from '../common/audit/audit.service';
-import { addDays, assertDateOrder, endOfDay, itemRows, pricingFields } from '../common/documents/document-helpers';
+import {
+  addDays,
+  assertDateOrder,
+  endOfDay,
+  itemRows,
+  pricingFields,
+} from '../common/documents/document-helpers';
 import { lockDocument } from '../common/documents/row-lock';
 import { asJson, SnapshotService } from '../common/documents/snapshot.service';
-import { assertTransition, QUOTATION_TRANSITIONS } from '../common/documents/status-workflow';
+import {
+  assertTransition,
+  QUOTATION_TRANSITIONS,
+} from '../common/documents/status-workflow';
 import { calculateDocument } from '../common/money/document-calculator';
 import { NumberingService } from '../common/numbering/numbering.service';
 import { DocumentTemplatesService } from '../document-templates/document-templates.service';
@@ -57,7 +70,10 @@ export class QuotationsService {
   }
 
   async findOne(agencyId: string, id: string) {
-    const quotation = await this.prisma.quotation.findFirst({ where: { id, agencyId }, include: QUOTATION_DETAIL_INCLUDE });
+    const quotation = await this.prisma.quotation.findFirst({
+      where: { id, agencyId },
+      include: QUOTATION_DETAIL_INCLUDE,
+    });
     if (!quotation) throw new NotFoundException('Quotation not found');
     return quotation;
   }
@@ -66,13 +82,34 @@ export class QuotationsService {
     const calc = calculateDocument(dto.items, dto);
     const issueDate = dto.issueDate ? new Date(dto.issueDate) : new Date();
     const expiryDate = new Date(dto.expiryDate);
-    assertDateOrder(issueDate, expiryDate, 'Expiry date must be on or after the issue date');
+    assertDateOrder(
+      issueDate,
+      expiryDate,
+      'Expiry date must be on or after the issue date',
+    );
 
     return this.prisma.$transaction(async (tx) => {
-      const { snapshot: clientSnapshot } = await this.snapshots.loadClient(tx, agencyId, dto.clientId);
-      await this.snapshots.assertProject(tx, agencyId, dto.clientId, dto.projectId);
-      const { snapshot: agencySnapshot } = await this.snapshots.loadAgency(tx, agencyId);
-      const template = await this.templates.resolve(tx, agencyId, 'QUOTATION', dto.templateId);
+      const { snapshot: clientSnapshot } = await this.snapshots.loadClient(
+        tx,
+        agencyId,
+        dto.clientId,
+      );
+      await this.snapshots.assertProject(
+        tx,
+        agencyId,
+        dto.clientId,
+        dto.projectId,
+      );
+      const { snapshot: agencySnapshot } = await this.snapshots.loadAgency(
+        tx,
+        agencyId,
+      );
+      const template = await this.templates.resolve(
+        tx,
+        agencyId,
+        'QUOTATION',
+        dto.templateId,
+      );
       const number = await this.numbering.next(tx, agencyId, 'QT');
 
       const quotation = await tx.quotation.create({
@@ -96,7 +133,14 @@ export class QuotationsService {
         },
         include: QUOTATION_DETAIL_INCLUDE,
       });
-      await this.audit.log(tx, { agencyId, userId, action: 'quotation.created', entity: 'Quotation', entityId: quotation.id, details: { number } });
+      await this.audit.log(tx, {
+        agencyId,
+        userId,
+        action: 'quotation.created',
+        entity: 'Quotation',
+        entityId: quotation.id,
+        details: { number },
+      });
       return quotation;
     });
   }
@@ -105,26 +149,51 @@ export class QuotationsService {
    * Edits a DRAFT quotation. Totals are always recomputed server-side, and the
    * client/agency/template snapshots are refreshed (they freeze once SENT).
    */
-  async update(agencyId: string, userId: string, id: string, dto: UpdateQuotationDto) {
+  async update(
+    agencyId: string,
+    userId: string,
+    id: string,
+    dto: UpdateQuotationDto,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       await lockDocument(tx, 'quotations', id, agencyId);
-      const existing = await tx.quotation.findUniqueOrThrow({ where: { id }, include: { items: { orderBy: { position: 'asc' } } } });
-      if (existing.status !== 'DRAFT') throw new ConflictException('Only DRAFT quotations can be edited');
+      const existing = await tx.quotation.findUniqueOrThrow({
+        where: { id },
+        include: { items: { orderBy: { position: 'asc' } } },
+      });
+      if (existing.status !== 'DRAFT')
+        throw new ConflictException('Only DRAFT quotations can be edited');
 
       const calc = calculateDocument(dto.items ?? existing.items, {
         discountType: dto.discountType ?? existing.discountType,
         discountValue: dto.discountValue ?? existing.discountValue,
         taxRate: dto.taxRate ?? existing.taxRate,
       });
-      const issueDate = dto.issueDate ? new Date(dto.issueDate) : existing.issueDate;
-      const expiryDate = dto.expiryDate ? endOfDay(new Date(dto.expiryDate)) : existing.expiryDate;
-      assertDateOrder(issueDate, expiryDate, 'Expiry date must be on or after the issue date');
+      const issueDate = dto.issueDate
+        ? new Date(dto.issueDate)
+        : existing.issueDate;
+      const expiryDate = dto.expiryDate
+        ? endOfDay(new Date(dto.expiryDate))
+        : existing.expiryDate;
+      assertDateOrder(
+        issueDate,
+        expiryDate,
+        'Expiry date must be on or after the issue date',
+      );
 
       const clientId = dto.clientId ?? existing.clientId;
-      const projectId = dto.projectId !== undefined ? dto.projectId : existing.projectId;
-      const { snapshot: clientSnapshot } = await this.snapshots.loadClient(tx, agencyId, clientId);
+      const projectId =
+        dto.projectId !== undefined ? dto.projectId : existing.projectId;
+      const { snapshot: clientSnapshot } = await this.snapshots.loadClient(
+        tx,
+        agencyId,
+        clientId,
+      );
       await this.snapshots.assertProject(tx, agencyId, clientId, projectId);
-      const { snapshot: agencySnapshot } = await this.snapshots.loadAgency(tx, agencyId);
+      const { snapshot: agencySnapshot } = await this.snapshots.loadAgency(
+        tx,
+        agencyId,
+      );
       const template = await this.templates.resolve(
         tx,
         agencyId,
@@ -146,29 +215,54 @@ export class QuotationsService {
           agencySnapshot: asJson(agencySnapshot),
           templateSnapshot: asJson(template.snapshot),
           currency: agencySnapshot.currency,
-          notes: dto.notes !== undefined ? dto.notes.trim() || null : existing.notes,
-          terms: dto.terms !== undefined ? dto.terms.trim() || null : existing.terms,
+          notes:
+            dto.notes !== undefined ? dto.notes.trim() || null : existing.notes,
+          terms:
+            dto.terms !== undefined ? dto.terms.trim() || null : existing.terms,
           ...pricingFields(calc),
           items: { create: itemRows(calc) },
         },
         include: QUOTATION_DETAIL_INCLUDE,
       });
-      await this.audit.log(tx, { agencyId, userId, action: 'quotation.updated', entity: 'Quotation', entityId: id });
+      await this.audit.log(tx, {
+        agencyId,
+        userId,
+        action: 'quotation.updated',
+        entity: 'Quotation',
+        entityId: id,
+      });
       return quotation;
     });
   }
 
-  async changeStatus(agencyId: string, userId: string, id: string, dto: UpdateQuotationStatusDto) {
+  async changeStatus(
+    agencyId: string,
+    userId: string,
+    id: string,
+    dto: UpdateQuotationStatusDto,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       await lockDocument(tx, 'quotations', id, agencyId);
-      const existing = await tx.quotation.findUniqueOrThrow({ where: { id }, include: { invoice: { select: { id: true } } } });
-      assertTransition(QUOTATION_TRANSITIONS, existing.status, dto.status, 'Quotation');
+      const existing = await tx.quotation.findUniqueOrThrow({
+        where: { id },
+        include: { invoice: { select: { id: true } } },
+      });
+      assertTransition(
+        QUOTATION_TRANSITIONS,
+        existing.status,
+        dto.status,
+        'Quotation',
+      );
 
       if (dto.status === 'ACCEPTED' && existing.expiryDate < new Date()) {
-        throw new ConflictException('This quotation has passed its expiry date and can no longer be accepted');
+        throw new ConflictException(
+          'This quotation has passed its expiry date and can no longer be accepted',
+        );
       }
       if (dto.status === 'VOID' && existing.invoice) {
-        throw new ConflictException('This quotation has been converted to an invoice and cannot be voided');
+        throw new ConflictException(
+          'This quotation has been converted to an invoice and cannot be voided',
+        );
       }
 
       const now = new Date();
@@ -203,25 +297,49 @@ export class QuotationsService {
    * other and the second sees the invoice, and (2) Invoice.quotationId is
    * UNIQUE in the database as a last line of defence.
    */
-  async convertToInvoice(agencyId: string, userId: string, id: string, dto: ConvertQuotationDto = {}) {
+  async convertToInvoice(
+    agencyId: string,
+    userId: string,
+    id: string,
+    dto: ConvertQuotationDto = {},
+  ) {
     try {
       return await this.prisma.$transaction(async (tx) => {
         await lockDocument(tx, 'quotations', id, agencyId);
         const quotation = await tx.quotation.findUniqueOrThrow({
           where: { id },
-          include: { items: { orderBy: { position: 'asc' } }, invoice: { select: { id: true } } },
+          include: {
+            items: { orderBy: { position: 'asc' } },
+            invoice: { select: { id: true } },
+          },
         });
         if (quotation.invoice) {
-          return tx.invoice.findUniqueOrThrow({ where: { id: quotation.invoice.id }, include: INVOICE_DETAIL_INCLUDE });
+          return tx.invoice.findUniqueOrThrow({
+            where: { id: quotation.invoice.id },
+            include: INVOICE_DETAIL_INCLUDE,
+          });
         }
         if (quotation.status !== 'ACCEPTED') {
-          throw new ConflictException(`Only ACCEPTED quotations can be converted (this one is ${quotation.status})`);
+          throw new ConflictException(
+            `Only ACCEPTED quotations can be converted (this one is ${quotation.status})`,
+          );
         }
 
         const issueDate = new Date();
-        const dueDate = endOfDay(dto.dueDate ? new Date(dto.dueDate) : addDays(issueDate, 14));
-        assertDateOrder(issueDate, dueDate, 'Due date must be on or after today');
-        const template = await this.templates.resolve(tx, agencyId, 'INVOICE', dto.templateId);
+        const dueDate = endOfDay(
+          dto.dueDate ? new Date(dto.dueDate) : addDays(issueDate, 14),
+        );
+        assertDateOrder(
+          issueDate,
+          dueDate,
+          'Due date must be on or after today',
+        );
+        const template = await this.templates.resolve(
+          tx,
+          agencyId,
+          'INVOICE',
+          dto.templateId,
+        );
         const number = await this.numbering.next(tx, agencyId, 'INV');
 
         const invoice = await tx.invoice.create({
@@ -252,13 +370,21 @@ export class QuotationsService {
             notes: quotation.notes,
             terms: quotation.terms,
             items: {
-              create: quotation.items.map(({ position, description, quantity, unitPrice, lineTotal }) => ({
-                position,
-                description,
-                quantity,
-                unitPrice,
-                lineTotal,
-              })),
+              create: quotation.items.map(
+                ({
+                  position,
+                  description,
+                  quantity,
+                  unitPrice,
+                  lineTotal,
+                }) => ({
+                  position,
+                  description,
+                  quantity,
+                  unitPrice,
+                  lineTotal,
+                }),
+              ),
             },
           },
           include: INVOICE_DETAIL_INCLUDE,
@@ -274,8 +400,14 @@ export class QuotationsService {
         return invoice;
       });
     } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        const existing = await this.prisma.invoice.findFirst({ where: { quotationId: id, agencyId }, include: INVOICE_DETAIL_INCLUDE });
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        const existing = await this.prisma.invoice.findFirst({
+          where: { quotationId: id, agencyId },
+          include: INVOICE_DETAIL_INCLUDE,
+        });
         if (existing) return existing;
       }
       throw e;
