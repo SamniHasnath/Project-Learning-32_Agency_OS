@@ -1,6 +1,15 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsISO4217CurrencyCode, IsNotEmpty, IsOptional, IsString, Matches, MaxLength, ValidateIf } from 'class-validator';
+import {
+  IsEmail,
+  IsISO4217CurrencyCode,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
 
 /** ~375 KB image once base64 encoded. */
 const MAX_LOGO_LENGTH = 500_000;
@@ -15,7 +24,9 @@ export class UpdateSettingsDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
   @IsEmail()
   email?: string;
 
@@ -48,11 +59,15 @@ export class UpdateSettingsDto {
   @IsISO4217CurrencyCode()
   currency?: string;
 
-  @ApiPropertyOptional({ description: 'PNG/JPEG as a base64 data URL, or empty string to remove' })
+  @ApiPropertyOptional({
+    description: 'PNG/JPEG as a base64 data URL, or empty string to remove',
+  })
   @IsOptional()
   @ValidateIf((_, v) => v !== '')
   @IsString()
   @MaxLength(MAX_LOGO_LENGTH, { message: 'Logo must be smaller than ~375 KB' })
-  @Matches(/^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/, { message: 'Logo must be a PNG or JPEG image' })
+  @Matches(/^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/, {
+    message: 'Logo must be a PNG or JPEG image',
+  })
   logoUrl?: string;
 }
