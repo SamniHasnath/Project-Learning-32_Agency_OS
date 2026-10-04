@@ -19,7 +19,9 @@ import { SettingsModule } from './settings/settings.module';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: Number(process.env.RATE_LIMIT_PER_MINUTE ?? 300) }]),
+    ThrottlerModule.forRoot([
+      { ttl: 60_000, limit: Number(process.env.RATE_LIMIT_PER_MINUTE ?? 300) },
+    ]),
     PrismaModule,
     AuthModule,
     ClientsModule,
