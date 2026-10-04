@@ -11,8 +11,14 @@ import { JwtAuthGuard } from './jwt-auth.guard';
       global: true,
       useFactory: () => {
         const secret = process.env.JWT_SECRET;
-        if (!secret || secret.length < 32) throw new Error('JWT_SECRET must be set to at least 32 characters');
-        return { secret, signOptions: { expiresIn: (process.env.JWT_EXPIRES_IN ?? '7d') as `${number}d` } };
+        if (!secret || secret.length < 32)
+          throw new Error('JWT_SECRET must be set to at least 32 characters');
+        return {
+          secret,
+          signOptions: {
+            expiresIn: (process.env.JWT_EXPIRES_IN ?? '7d') as `${number}d`,
+          },
+        };
       },
     }),
   ],
