@@ -1,35 +1,30 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
 
+/**
+ * Single Prisma client for the app. Fails fast on boot when the database is
+ * unreachable — there is deliberately no in-memory fallback, because silently
+ * "succeeding" without persisting is unacceptable for financial records.
+ */
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
-  public isConnected = false;
 
   constructor() {
-    const connectionString =
-      process.env.DATABASE_URL || 'postgresql://agency_os_app:password@localhost:5432/agency_os?schema=public';
-    const pool = new Pool({ connectionString });
-    const adapter = new PrismaPg(pool);
-    super({ adapter });
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+      throw new Error('DATABASE_URL is not set');
+    }
+    super({ adapter: new PrismaPg({ connectionString }) });
   }
 
   async onModuleInit() {
-    try {
-      await this.$connect();
-      this.isConnected = true;
-      this.logger.log('Successfully connected to PostgreSQL database via Prisma ORM.');
-    } catch (e: any) {
-      this.isConnected = false;
-      this.logger.warn(`PostgreSQL connection offline (${e?.message || e}). Operating in fallback mode.`);
-    }
+    await this.$connect();
+    this.logger.log('Connected to PostgreSQL');
   }
 
   async onModuleDestroy() {
-    if (this.isConnected) {
-      await this.$disconnect();
-    }
+    await this.$disconnect();
   }
 }
