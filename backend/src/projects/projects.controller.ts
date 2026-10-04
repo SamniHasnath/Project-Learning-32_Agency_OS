@@ -1,32 +1,38 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { CurrentAgency } from '../auth/auth-user';
+import { CreateProjectDto, UpdateProjectDto } from './dto/project.dto';
 import { ProjectsService } from './projects.service';
 
-@Controller('api/projects')
+@ApiTags('projects')
+@ApiBearerAuth()
+@Controller('projects')
 export class ProjectsController {
-  constructor(private readonly projectsService: ProjectsService) {}
+  constructor(private readonly projects: ProjectsService) {}
 
+  @ApiQuery({ name: 'clientId', required: false })
   @Get()
-  findAll() {
-    return this.projectsService.findAll();
+  findAll(@CurrentAgency() agencyId: string, @Query('clientId', new ParseUUIDPipe({ optional: true })) clientId?: string) {
+    return this.projects.findAll(agencyId, clientId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.projectsService.findOne(id);
+  findOne(@CurrentAgency() agencyId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.projects.findOne(agencyId, id);
   }
 
   @Post()
-  create(@Body() data: any) {
-    return this.projectsService.create(data);
+  create(@CurrentAgency() agencyId: string, @Body() dto: CreateProjectDto) {
+    return this.projects.create(agencyId, dto);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() data: any) {
-    return this.projectsService.update(id, data);
+  update(@CurrentAgency() agencyId: string, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProjectDto) {
+    return this.projects.update(agencyId, id, dto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.projectsService.remove(id);
+  remove(@CurrentAgency() agencyId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.projects.remove(agencyId, id);
   }
 }
