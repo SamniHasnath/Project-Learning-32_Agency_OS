@@ -1,7 +1,9 @@
-import { RecordDetail } from "@/components/workspace/workspace-ui";
-import { getRecord } from "@/services/workspace";
+"use client";
 
-export default async function QuotationDetailPage({ params }: PageProps<"/quotations/[id]">) {
-  const { id } = await params;
-  return <RecordDetail kind="quotations" record={getRecord("quotations", id)} />;
+import { useParams } from "next/navigation";
+import { QuotationDetail } from "@/features/quotations/quotation-detail";
+
+export default function QuotationDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  return <QuotationDetail id={id} />;
 }
