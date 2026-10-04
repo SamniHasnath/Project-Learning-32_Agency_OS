@@ -1,7 +1,14 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { ClientStatus } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateClientDto {
   @ApiProperty({ example: 'Olivia Chen' })
@@ -11,7 +18,9 @@ export class CreateClientDto {
   name: string;
 
   @ApiProperty({ example: 'olivia@acmestudio.co' })
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
   @IsEmail()
   email: string;
 
