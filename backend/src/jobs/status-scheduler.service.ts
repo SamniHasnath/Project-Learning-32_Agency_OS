@@ -19,14 +19,23 @@ export class StatusSchedulerService implements OnApplicationBootstrap {
   async sweep(now = new Date()) {
     try {
       const [expired, overdue] = await Promise.all([
-        this.prisma.quotation.updateMany({ where: { status: 'SENT', expiryDate: { lt: now } }, data: { status: 'EXPIRED' } }),
+        this.prisma.quotation.updateMany({
+          where: { status: 'SENT', expiryDate: { lt: now } },
+          data: { status: 'EXPIRED' },
+        }),
         this.prisma.invoice.updateMany({
-          where: { status: { in: ['SENT', 'PARTIALLY_PAID'] }, dueDate: { lt: now }, outstandingAmount: { gt: 0 } },
+          where: {
+            status: { in: ['SENT', 'PARTIALLY_PAID'] },
+            dueDate: { lt: now },
+            outstandingAmount: { gt: 0 },
+          },
           data: { status: 'OVERDUE' },
         }),
       ]);
       if (expired.count || overdue.count) {
-        this.logger.log(`Marked ${expired.count} quotation(s) EXPIRED and ${overdue.count} invoice(s) OVERDUE`);
+        this.logger.log(
+          `Marked ${expired.count} quotation(s) EXPIRED and ${overdue.count} invoice(s) OVERDUE`,
+        );
       }
       return { expired: expired.count, overdue: overdue.count };
     } catch (e) {
