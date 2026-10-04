@@ -1,7 +1,9 @@
-import { RecordDetail } from "@/components/workspace/workspace-ui";
-import { getRecord } from "@/services/workspace";
+"use client";
 
-export default async function InvoiceDetailPage({ params }: PageProps<"/invoices/[id]">) {
-  const { id } = await params;
-  return <RecordDetail kind="invoices" record={getRecord("invoices", id)} />;
+import { useParams } from "next/navigation";
+import { InvoiceDetail } from "@/features/invoices/invoice-detail";
+
+export default function InvoiceDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  return <InvoiceDetail id={id} />;
 }
