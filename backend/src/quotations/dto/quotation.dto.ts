@@ -1,6 +1,14 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { QuotationStatus } from '@prisma/client';
-import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import { DocumentPricingDto } from '../../common/documents/document.dto';
 
 export class CreateQuotationDto extends DocumentPricingDto {
@@ -13,7 +21,10 @@ export class CreateQuotationDto extends DocumentPricingDto {
   @IsUUID()
   projectId?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid', description: 'Defaults to the agency default quotation template' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Defaults to the agency default quotation template',
+  })
   @IsOptional()
   @IsUUID()
   templateId?: string | null;
@@ -44,12 +55,18 @@ export class UpdateQuotationStatusDto {
 }
 
 export class ConvertQuotationDto {
-  @ApiPropertyOptional({ example: '2026-10-18', description: 'Defaults to 14 days from today' })
+  @ApiPropertyOptional({
+    example: '2026-10-18',
+    description: 'Defaults to 14 days from today',
+  })
   @IsOptional()
   @IsDateString()
   dueDate?: string;
 
-  @ApiPropertyOptional({ format: 'uuid', description: 'Invoice template; defaults to the agency default' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Invoice template; defaults to the agency default',
+  })
   @IsOptional()
   @IsUUID()
   templateId?: string;
