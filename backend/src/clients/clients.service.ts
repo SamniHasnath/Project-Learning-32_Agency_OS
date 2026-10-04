@@ -1,128 +1,82 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateClientDto, UpdateClientDto } from './dto/client.dto';
+
+/** Empty strings from forms are stored as NULL. */
+const clean = <T extends object>(dto: T) =>
+  Object.fromEntries(Object.entries(dto).map(([k, v]) => [k, typeof v === 'string' ? v.trim() || null : v])) as T;
 
 @Injectable()
 export class ClientsService {
-  private memoryClients = [
-    {
-      id: 'c1',
-      name: 'Acme Corporation',
-      email: 'contact@acmecorp.com',
-      phone: '+1 (555) 123-4567',
-      company: 'Acme Corp',
-      address: '100 Industrial Parkway, CA',
-      taxId: 'TX-998811',
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString(),
-      _count: { projects: 2, quotations: 1, invoices: 3 },
-    },
-    {
-      id: 'c2',
-      name: 'Globex Enterprise',
-      email: 'hello@globex.io',
-      phone: '+1 (555) 987-6543',
-      company: 'Globex Inc.',
-      address: '450 Innovation Way, Austin, TX',
-      taxId: 'TX-774422',
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString(),
-      _count: { projects: 1, quotations: 2, invoices: 1 },
-    },
-    {
-      id: 'c3',
-      name: 'Stark Media Group',
-      email: 'info@starkmedia.com',
-      phone: '+1 (555) 456-7890',
-      company: 'Stark Media',
-      address: '1 Stark Tower, New York, NY',
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString(),
-      _count: { projects: 3, quotations: 0, invoices: 2 },
-    },
-  ];
+  constructor(private readonly prisma: PrismaService) {}
 
-  constructor(private prisma: PrismaService) {}
-
-  async findAll() {
-    if (this.prisma.isConnected) {
-      try {
-        return await this.prisma.client.findMany({
-          include: {
-            _count: { select: { projects: true, quotations: true, invoices: true } },
-          },
-          orderBy: { createdAt: 'desc' },
-        });
-      } catch (e) {
-        console.warn('DB error, using memory fallback:', e?.message);
-      }
-    }
-    return this.memoryClients;
+  findAll(agencyId: string, search?: string) {
+    const q = search?.trim();
+    return this.prisma.client.findMany({
+      where: {
+        agencyId,
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: 'insensitive' } },
+                { email: { contains: q, mode: 'insensitive' } },
+                { company: { contains: q, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
+      include: { _count: { select: { projects: true, quotations: true, invoices: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
-  async findOne(id: string) {
-    if (this.prisma.isConnected) {
-      try {
-        const client = await this.prisma.client.findUnique({
-          where: { id },
-          include: { projects: true, quotations: true, invoices: true },
-        });
-        if (client) return client;
-      } catch (e) {
-        console.warn('DB error, using memory fallback:', e?.message);
-      }
-    }
-    const client = this.memoryClients.find((c) => c.id === id);
-    if (!client) throw new NotFoundException(`Client with ID ${id} not found`);
+  async findOne(agencyId: string, id: string) {
+    const client = await this.prisma.client.findFirst({
+      where: { id, agencyId },
+      include: {
+        projects: { orderBy: { createdAt: 'desc' } },
+        quotations: { orderBy: { createdAt: 'desc' }, take: 20 },
+        invoices: { orderBy: { createdAt: 'desc' }, take: 20 },
+        _count: { select: { projects: true, quotations: true, invoices: true } },
+      },
+    });
+    if (!client) throw new NotFoundException('Client not found');
     return client;
   }
 
-  async create(data: any) {
-    if (this.prisma.isConnected) {
-      try {
-        return await this.prisma.client.create({ data });
-      } catch (e) {
-        console.warn('DB error, saving to memory:', e?.message);
-      }
+  async create(agencyId: string, dto: CreateClientDto) {
+    try {
+      return await this.prisma.client.create({ data: { ...clean(dto), name: dto.name.trim(), email: dto.email, agencyId } });
+    } catch (e) {
+      throw this.duplicate(e);
     }
-    const newClient = {
-      id: `client-${Date.now()}`,
-      name: data.name || 'New Client',
-      email: data.email || 'client@example.com',
-      phone: data.phone,
-      company: data.company,
-      address: data.address,
-      taxId: data.taxId,
-      status: data.status || 'ACTIVE',
-      createdAt: new Date().toISOString(),
-      _count: { projects: 0, quotations: 0, invoices: 0 },
-    };
-    this.memoryClients.unshift(newClient);
-    return newClient;
   }
 
-  async update(id: string, data: any) {
-    if (this.prisma.isConnected) {
-      try {
-        return await this.prisma.client.update({ where: { id }, data });
-      } catch (e) {
-        console.warn('DB error, updating memory:', e?.message);
-      }
+  async update(agencyId: string, id: string, dto: UpdateClientDto) {
+    await this.findOne(agencyId, id);
+    try {
+      // Issued quotations/invoices keep their own clientSnapshot, so this edit never changes them.
+      return await this.prisma.client.update({ where: { id }, data: clean(dto) });
+    } catch (e) {
+      throw this.duplicate(e);
     }
-    const index = this.memoryClients.findIndex((c) => c.id === id);
-    if (index === -1) throw new NotFoundException(`Client with ID ${id} not found`);
-    this.memoryClients[index] = { ...this.memoryClients[index], ...data };
-    return this.memoryClients[index];
   }
 
-  async remove(id: string) {
-    if (this.prisma.isConnected) {
-      try {
-        return await this.prisma.client.delete({ where: { id } });
-      } catch (e) {
-        console.warn('DB error, deleting from memory:', e?.message);
-      }
+  async remove(agencyId: string, id: string) {
+    const client = await this.findOne(agencyId, id);
+    const { quotations, invoices, projects } = client._count;
+    if (quotations || invoices || projects) {
+      throw new ConflictException('This client has projects or documents. Mark it INACTIVE instead of deleting it.');
     }
-    this.memoryClients = this.memoryClients.filter((c) => c.id !== id);
+    await this.prisma.client.delete({ where: { id } });
     return { success: true };
+  }
+
+  private duplicate(e: unknown) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      return new ConflictException('A client with this email already exists');
+    }
+    return e;
   }
 }
