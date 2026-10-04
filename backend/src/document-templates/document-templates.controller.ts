@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Param, ParseEnumPipe, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseEnumPipe,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { DocumentType } from '@prisma/client';
 import { CurrentAgency } from '../auth/auth-user';
@@ -15,13 +26,17 @@ export class DocumentTemplatesController {
   @Get()
   findAll(
     @CurrentAgency() agencyId: string,
-    @Query('type', new ParseEnumPipe(DocumentType, { optional: true })) type?: DocumentType,
+    @Query('type', new ParseEnumPipe(DocumentType, { optional: true }))
+    type?: DocumentType,
   ) {
     return this.templates.findAll(agencyId, type);
   }
 
   @Get(':id')
-  findOne(@CurrentAgency() agencyId: string, @Param('id', ParseUUIDPipe) id: string) {
+  findOne(
+    @CurrentAgency() agencyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.templates.findOne(agencyId, id);
   }
 
@@ -31,17 +46,27 @@ export class DocumentTemplatesController {
   }
 
   @Patch(':id')
-  update(@CurrentAgency() agencyId: string, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateTemplateDto) {
+  update(
+    @CurrentAgency() agencyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTemplateDto,
+  ) {
     return this.templates.update(agencyId, id, dto);
   }
 
   @Post(':id/set-default')
-  setDefault(@CurrentAgency() agencyId: string, @Param('id', ParseUUIDPipe) id: string) {
+  setDefault(
+    @CurrentAgency() agencyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.templates.setDefault(agencyId, id);
   }
 
   @Delete(':id')
-  remove(@CurrentAgency() agencyId: string, @Param('id', ParseUUIDPipe) id: string) {
+  remove(
+    @CurrentAgency() agencyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.templates.remove(agencyId, id);
   }
 }
