@@ -30,27 +30,51 @@ export interface AgencySnapshot {
 @Injectable()
 export class SnapshotService {
   /** Loads a client that must belong to the agency and returns it with its snapshot. */
-  async loadClient(tx: Prisma.TransactionClient, agencyId: string, clientId: string) {
-    const client = await tx.client.findFirst({ where: { id: clientId, agencyId } });
+  async loadClient(
+    tx: Prisma.TransactionClient,
+    agencyId: string,
+    clientId: string,
+  ) {
+    const client = await tx.client.findFirst({
+      where: { id: clientId, agencyId },
+    });
     if (!client) throw new BadRequestException('Client not found');
     return { client, snapshot: this.client(client) };
   }
 
   async loadAgency(tx: Prisma.TransactionClient, agencyId: string) {
-    const agency = await tx.agency.findUniqueOrThrow({ where: { id: agencyId } });
+    const agency = await tx.agency.findUniqueOrThrow({
+      where: { id: agencyId },
+    });
     return { agency, snapshot: this.agency(agency) };
   }
 
   /** Optional project must belong to the agency and to the same client. */
-  async assertProject(tx: Prisma.TransactionClient, agencyId: string, clientId: string, projectId?: string | null) {
+  async assertProject(
+    tx: Prisma.TransactionClient,
+    agencyId: string,
+    clientId: string,
+    projectId?: string | null,
+  ) {
     if (!projectId) return;
-    const project = await tx.project.findFirst({ where: { id: projectId, agencyId } });
+    const project = await tx.project.findFirst({
+      where: { id: projectId, agencyId },
+    });
     if (!project) throw new BadRequestException('Project not found');
-    if (project.clientId !== clientId) throw new BadRequestException('Project belongs to a different client');
+    if (project.clientId !== clientId)
+      throw new BadRequestException('Project belongs to a different client');
   }
 
   client(c: Client): ClientSnapshot {
-    return { id: c.id, name: c.name, email: c.email, phone: c.phone, company: c.company, address: c.address, taxId: c.taxId };
+    return {
+      id: c.id,
+      name: c.name,
+      email: c.email,
+      phone: c.phone,
+      company: c.company,
+      address: c.address,
+      taxId: c.taxId,
+    };
   }
 
   agency(a: Agency): AgencySnapshot {
