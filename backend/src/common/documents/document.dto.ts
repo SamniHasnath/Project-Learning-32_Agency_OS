@@ -60,7 +60,10 @@ export class DocumentPricingDto {
   @Min(0)
   discountValue?: number;
 
-  @ApiPropertyOptional({ example: 10, description: 'Percent, applied after discount' })
+  @ApiPropertyOptional({
+    example: 10,
+    description: 'Percent, applied after discount',
+  })
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
