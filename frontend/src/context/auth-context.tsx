@@ -28,16 +28,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ status: "anonymous" });
   }, []);
 
+  // Restore the session from a stored token (localStorage only exists in the browser).
   useEffect(() => {
     setUnauthorizedHandler(logout);
-    if (!tokenStore.get()) {
-      setState({ status: "anonymous" });
-      return () => setUnauthorizedHandler(null);
-    }
-    AuthApi.me()
-      .then(({ user, agency }) => setState({ status: "authenticated", user, agency }))
-      .catch(() => logout());
-    return () => setUnauthorizedHandler(null);
+    let cancelled = false;
+    Promise.resolve(tokenStore.get())
+      .then((token) => (token ? AuthApi.me() : null))
+      .then((session) => {
+        if (cancelled) return;
+        setState(session ? { status: "authenticated", user: session.user, agency: session.agency } : { status: "anonymous" });
+      })
+      .catch(() => !cancelled && logout());
+    return () => {
+      cancelled = true;
+      setUnauthorizedHandler(null);
+    };
   }, [logout]);
 
   const login = useCallback(async (email: string, password: string) => {
