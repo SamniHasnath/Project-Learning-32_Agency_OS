@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Res, StreamableFile } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  Res,
+  StreamableFile,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type { AuthUser } from '../auth/auth-user';
@@ -28,7 +39,10 @@ export class QuotationsController {
   }
 
   @Get(':id')
-  findOne(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+  findOne(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.quotations.findOne(user.agencyId, id);
   }
 
@@ -38,18 +52,35 @@ export class QuotationsController {
   }
 
   @Patch(':id')
-  update(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateQuotationDto) {
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateQuotationDto,
+  ) {
     return this.quotations.update(user.agencyId, user.userId, id, dto);
   }
 
   @Patch(':id/status')
-  changeStatus(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateQuotationStatusDto) {
+  changeStatus(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateQuotationStatusDto,
+  ) {
     return this.quotations.changeStatus(user.agencyId, user.userId, id, dto);
   }
 
   @Post(':id/convert-to-invoice')
-  convert(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: ConvertQuotationDto) {
-    return this.quotations.convertToInvoice(user.agencyId, user.userId, id, dto);
+  convert(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ConvertQuotationDto,
+  ) {
+    return this.quotations.convertToInvoice(
+      user.agencyId,
+      user.userId,
+      id,
+      dto,
+    );
   }
 
   @ApiProduces('application/pdf')
