@@ -13,7 +13,12 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-import { FONT_FAMILIES, SECTION_KEYS, type FontFamily, type SectionKey } from '../template-config';
+import {
+  FONT_FAMILIES,
+  SECTION_KEYS,
+  type FontFamily,
+  type SectionKey,
+} from '../template-config';
 
 export class BrandingDto {
   @ApiProperty({ example: '#464feb' })
