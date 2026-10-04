@@ -44,18 +44,27 @@ const money = (value: Decimal) => value.toDecimalPlaces(2, D.ROUND_HALF_UP);
  */
 export function calculateDocument(
   items: LineItemInput[],
-  options: { discountType?: DiscountType; discountValue?: Numeric; taxRate?: Numeric } = {},
+  options: {
+    discountType?: DiscountType;
+    discountValue?: Numeric;
+    taxRate?: Numeric;
+  } = {},
 ): CalculatedDocument {
-  if (!items.length) throw new BadRequestException('At least one line item is required');
+  if (!items.length)
+    throw new BadRequestException('At least one line item is required');
 
   const lines = items.map((item, position) => {
     const quantity = new D(item.quantity);
     const unitPrice = new D(item.unitPrice);
     if (!quantity.isFinite() || quantity.lte(0)) {
-      throw new BadRequestException(`Line ${position + 1}: quantity must be greater than 0`);
+      throw new BadRequestException(
+        `Line ${position + 1}: quantity must be greater than 0`,
+      );
     }
     if (!unitPrice.isFinite() || unitPrice.lt(0)) {
-      throw new BadRequestException(`Line ${position + 1}: unit price cannot be negative`);
+      throw new BadRequestException(
+        `Line ${position + 1}: unit price cannot be negative`,
+      );
     }
     return {
       position,
@@ -66,20 +75,28 @@ export function calculateDocument(
     };
   });
 
-  const subtotal = lines.reduce((sum, line) => sum.add(line.lineTotal), new D(0));
+  const subtotal = lines.reduce(
+    (sum, line) => sum.add(line.lineTotal),
+    new D(0),
+  );
 
   const discountType = options.discountType ?? DiscountType.FIXED;
   const discountValue = new D(options.discountValue ?? 0);
-  if (discountValue.lt(0)) throw new BadRequestException('Discount cannot be negative');
+  if (discountValue.lt(0))
+    throw new BadRequestException('Discount cannot be negative');
   if (discountType === DiscountType.PERCENTAGE && discountValue.gt(100)) {
     throw new BadRequestException('Percentage discount cannot exceed 100%');
   }
   const discountAmount =
-    discountType === DiscountType.PERCENTAGE ? money(subtotal.mul(discountValue).div(100)) : money(discountValue);
-  if (discountAmount.gt(subtotal)) throw new BadRequestException('Discount cannot exceed the subtotal');
+    discountType === DiscountType.PERCENTAGE
+      ? money(subtotal.mul(discountValue).div(100))
+      : money(discountValue);
+  if (discountAmount.gt(subtotal))
+    throw new BadRequestException('Discount cannot exceed the subtotal');
 
   const taxRate = new D(options.taxRate ?? 0);
-  if (taxRate.lt(0) || taxRate.gt(100)) throw new BadRequestException('Tax rate must be between 0 and 100');
+  if (taxRate.lt(0) || taxRate.gt(100))
+    throw new BadRequestException('Tax rate must be between 0 and 100');
   const taxAmount = money(subtotal.sub(discountAmount).mul(taxRate).div(100));
 
   return {
