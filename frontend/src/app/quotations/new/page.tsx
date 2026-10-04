@@ -1,3 +1,7 @@
-import { WorkspaceForm } from "@/components/workspace/workspace-ui";
+"use client";
 
-export default function NewQuotationPage() { return <WorkspaceForm kind="quotations" />; }
+import { DocumentForm } from "@/features/documents/components/document-form";
+
+export default function NewQuotationPage() {
+  return <DocumentForm kind="quotation" />;
+}
