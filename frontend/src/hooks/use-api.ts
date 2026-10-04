@@ -32,8 +32,23 @@ export function useApi<T>(loader: () => Promise<T>, deps: unknown[] = []) {
     }
   }, []);
 
+  // Initial load and reloads when `deps` change. State is only set in the
+  // promise callbacks; `loading` starts as true so no synchronous update is needed.
   useEffect(() => {
-    void reload();
+    const id = ++requestId.current;
+    loaderRef.current().then(
+      (result) => {
+        if (id !== requestId.current) return;
+        setData(result);
+        setError(null);
+        setLoading(false);
+      },
+      (e: unknown) => {
+        if (id !== requestId.current) return;
+        setError(errorMessage(e));
+        setLoading(false);
+      },
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
