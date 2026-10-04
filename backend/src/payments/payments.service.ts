@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuditService } from '../common/audit/audit.service';
 import { lockDocument } from '../common/documents/row-lock';
@@ -8,7 +13,18 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentDto } from './dto/payment.dto';
 
 const PAYMENT_INCLUDE = {
-  invoice: { select: { id: true, number: true, title: true, currency: true, clientSnapshot: true, total: true, outstandingAmount: true, status: true } },
+  invoice: {
+    select: {
+      id: true,
+      number: true,
+      title: true,
+      currency: true,
+      clientSnapshot: true,
+      total: true,
+      outstandingAmount: true,
+      status: true,
+    },
+  },
 } satisfies Prisma.PaymentInclude;
 
 @Injectable()
@@ -28,7 +44,10 @@ export class PaymentsService {
   }
 
   async findOne(agencyId: string, id: string) {
-    const payment = await this.prisma.payment.findFirst({ where: { id, agencyId }, include: PAYMENT_INCLUDE });
+    const payment = await this.prisma.payment.findFirst({
+      where: { id, agencyId },
+      include: PAYMENT_INCLUDE,
+    });
     if (!payment) throw new NotFoundException('Payment not found');
     return payment;
   }
@@ -43,14 +62,21 @@ export class PaymentsService {
    */
   async create(agencyId: string, userId: string, dto: CreatePaymentDto) {
     const amount = new Prisma.Decimal(dto.amount);
-    if (amount.lte(0)) throw new BadRequestException('Payment amount must be greater than 0');
+    if (amount.lte(0))
+      throw new BadRequestException('Payment amount must be greater than 0');
 
     return this.prisma.$transaction(async (tx) => {
       await lockDocument(tx, 'invoices', dto.invoiceId, agencyId);
-      const invoice = await tx.invoice.findUniqueOrThrow({ where: { id: dto.invoiceId } });
+      const invoice = await tx.invoice.findUniqueOrThrow({
+        where: { id: dto.invoiceId },
+      });
 
-      if (invoice.status === 'DRAFT') throw new ConflictException('Send the invoice before recording payments');
-      if (invoice.status === 'VOID') throw new ConflictException('Cannot record payments on a VOID invoice');
+      if (invoice.status === 'DRAFT')
+        throw new ConflictException(
+          'Send the invoice before recording payments',
+        );
+      if (invoice.status === 'VOID')
+        throw new ConflictException('Cannot record payments on a VOID invoice');
       if (invoice.status === 'PAID' || invoice.outstandingAmount.lte(0)) {
         throw new ConflictException('This invoice is already fully paid');
       }
@@ -62,7 +88,10 @@ export class PaymentsService {
 
       const paidAmount = invoice.paidAmount.add(amount);
       const outstandingAmount = invoice.total.sub(paidAmount);
-      const status = statusAfterPayment(outstandingAmount.isZero(), invoice.dueDate);
+      const status = statusAfterPayment(
+        outstandingAmount.isZero(),
+        invoice.dueDate,
+      );
       const number = await this.numbering.next(tx, agencyId, 'PAY');
 
       const payment = await tx.payment.create({
@@ -80,7 +109,12 @@ export class PaymentsService {
       });
       await tx.invoice.update({
         where: { id: invoice.id },
-        data: { paidAmount, outstandingAmount, status, ...(status === 'PAID' ? { paidAt: new Date() } : {}) },
+        data: {
+          paidAmount,
+          outstandingAmount,
+          status,
+          ...(status === 'PAID' ? { paidAt: new Date() } : {}),
+        },
       });
       await this.audit.log(tx, {
         agencyId,
@@ -91,7 +125,10 @@ export class PaymentsService {
         details: { paymentId: payment.id, amount: amount.toFixed(2), status },
       });
       // Re-read so the embedded invoice reflects the new balance.
-      return tx.payment.findUniqueOrThrow({ where: { id: payment.id }, include: PAYMENT_INCLUDE });
+      return tx.payment.findUniqueOrThrow({
+        where: { id: payment.id },
+        include: PAYMENT_INCLUDE,
+      });
     });
   }
 }
