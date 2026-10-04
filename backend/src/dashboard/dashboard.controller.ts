@@ -1,17 +1,26 @@
 import { Controller, Get } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { CurrentAgency } from '../auth/auth-user';
 import { DashboardService } from './dashboard.service';
 
-@Controller('api/dashboard')
+@ApiTags('dashboard')
+@ApiBearerAuth()
+@Controller('dashboard')
 export class DashboardController {
-  constructor(private readonly dashboardService: DashboardService) {}
+  constructor(private readonly dashboard: DashboardService) {}
 
   @Get('metrics')
-  getMetrics() {
-    return this.dashboardService.getMetrics();
+  getMetrics(@CurrentAgency() agencyId: string) {
+    return this.dashboard.getMetrics(agencyId);
   }
 
   @Get('recent')
-  getRecentActivity() {
-    return this.dashboardService.getRecentActivity();
+  getRecentActivity(@CurrentAgency() agencyId: string) {
+    return this.dashboard.getRecentActivity(agencyId);
+  }
+
+  @Get('documents')
+  getDocumentOverview(@CurrentAgency() agencyId: string) {
+    return this.dashboard.getDocumentOverview(agencyId);
   }
 }
