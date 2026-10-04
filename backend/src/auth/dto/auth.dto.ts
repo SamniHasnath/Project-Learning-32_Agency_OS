@@ -1,8 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsNotEmpty, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
-const normaliseEmail = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value);
+const normaliseEmail = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim().toLowerCase() : value;
 
 export class RegisterDto {
   @ApiProperty({ example: 'Northstar Creative' })
