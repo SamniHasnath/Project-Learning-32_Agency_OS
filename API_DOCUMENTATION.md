@@ -1,200 +1,90 @@
-# Agency OS REST API Documentation
+# Agency OS REST API
 
-This document outlines the REST API endpoints provided by the NestJS backend of **Agency OS**.
+Base URL: `http://localhost:3001/api`. Live OpenAPI/Swagger UI is at `/api/docs`.
 
-Base URL: `http://localhost:3001`
+## Conventions
 
----
+- **Auth:** every endpoint except `POST /auth/register`, `POST /auth/login` and `GET /health` requires `Authorization: Bearer <accessToken>`.
+- **Tenancy:** the agency is taken from the token. Sending `agencyId` (or any unknown field) is rejected with `400`. Records of another agency return `404`.
+- **Money:** returned as decimal strings (e.g. `"1424.43"`). Send numbers with at most 2 decimals (quantities: 3).
+- **Server-calculated fields:** `lineTotal`, `subtotal`, `discountAmount`, `taxAmount`, `total`, `paidAmount`, `outstandingAmount`, `number` and `status` are never accepted from the client.
+- **Errors:** `{ "statusCode": 400, "message": "…" | ["…"], "error": "Bad Request" }`. `409` signals a business-rule conflict (e.g. an illegal status change).
 
-## Table of Contents
-1. [Overview](#overview)
-2. [Clients API](#clients-api)
-3. [Projects API](#projects-api)
-4. [Quotations API](#quotations-api)
-5. [Invoices API](#invoices-api)
-6. [Payments API](#payments-api)
-7. [Dashboard & Metrics API](#dashboard--metrics-api)
-8. [Settings API](#settings-api)
-9. [Database Schema](#database-schema)
+Totals: `lineTotal = round2(qty × unitPrice)`, `subtotal = Σ lineTotal`, `discount = FIXED value | round2(subtotal × % / 100)`, `tax = round2((subtotal − discount) × taxRate / 100)`, `total = subtotal − discount + tax`.
 
----
+## Auth
 
-## Overview
-All requests and responses use standard JSON (`Content-Type: application/json`).
+| Method | Path | Body / notes |
+|---|---|---|
+| POST | `/auth/register` | `{ agencyName, name, email, password }` → `{ accessToken, user, agency }`. Creates the agency and 4 starter templates. |
+| POST | `/auth/login` | `{ email, password }` → `{ accessToken, user, agency }` |
+| GET | `/auth/me` | Current user and agency |
 
-### Standard Status Codes
-- `200 OK`: Request succeeded.
-- `201 Created`: Resource successfully created.
-- `400 Bad Request`: Validation failure or invalid parameters.
-- `404 Not Found`: Requested record does not exist.
-- `500 Internal Server Error`: Server exception.
+## Quotations
 
----
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/quotations?status=&clientId=&search=` | List |
+| GET | `/quotations/:id` | Includes `items`, `invoice`, snapshots |
+| POST | `/quotations` | See body below. Created as `DRAFT` with number `QT-YYYY-NNNN`. |
+| PATCH | `/quotations/:id` | Any create field. **DRAFT only.** Totals and snapshots recomputed. |
+| PATCH | `/quotations/:id/status` | `{ status }`. Allowed: DRAFT→SENT/VOID, SENT→ACCEPTED/REJECTED/EXPIRED/VOID, ACCEPTED→VOID (if not converted). An expired quotation can't be accepted. |
+| POST | `/quotations/:id/convert-to-invoice` | `{ dueDate?, templateId? }`. **ACCEPTED only.** Idempotent: repeat calls return the same invoice. |
+| GET | `/quotations/:id/pdf[?download=1]` | `application/pdf` |
 
-## Clients API
-
-### 1. List All Clients
-- **Endpoint**: `GET /api/clients`
-- **Response** (`200 OK`):
-```json
-[
-  {
-    "id": "c1a2b3-...",
-    "name": "Acme Corporation",
-    "email": "contact@acmecorp.com",
-    "phone": "+1 (555) 123-4567",
-    "company": "Acme Corp",
-    "address": "100 Industrial Parkway, CA",
-    "taxId": "TX-998811",
-    "status": "ACTIVE",
-    "createdAt": "2026-09-28T21:00:00.000Z",
-    "_count": {
-      "projects": 2,
-      "quotations": 1,
-      "invoices": 3
-    }
-  }
-]
-```
-
-### 2. Get Client by ID
-- **Endpoint**: `GET /api/clients/:id`
-
-### 3. Create Client
-- **Endpoint**: `POST /api/clients`
-- **Body**:
 ```json
 {
-  "name": "Globex Inc",
-  "email": "hello@globex.io",
-  "company": "Globex Enterprise",
-  "phone": "+1 (555) 987-6543",
-  "status": "ACTIVE"
+  "clientId": "uuid", "projectId": "uuid|null", "templateId": "uuid|null",
+  "title": "Website redesign", "issueDate": "2026-10-04", "expiryDate": "2026-11-03",
+  "items": [{ "description": "Design", "quantity": 2, "unitPrice": 1500 }],
+  "discountType": "FIXED|PERCENTAGE", "discountValue": 0, "taxRate": 10,
+  "notes": "…", "terms": "…"
 }
 ```
 
-### 4. Update Client
-- **Endpoint**: `PATCH /api/clients/:id`
+## Invoices
 
-### 5. Delete Client
-- **Endpoint**: `DELETE /api/clients/:id`
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/invoices?status=&clientId=&search=` | List |
+| GET | `/invoices/:id` | Includes `items`, `payments`, `quotation` |
+| POST | `/invoices` | Same body as a quotation, but `dueDate?` (default +14 days) and `reference?` instead of `expiryDate`. |
+| PATCH | `/invoices/:id` | **DRAFT only.** |
+| PATCH | `/invoices/:id/status` | DRAFT→SENT/VOID, SENT→OVERDUE/VOID, OVERDUE→VOID. Can't void once paid; `PARTIALLY_PAID`/`PAID` are set by payments only. |
+| GET | `/invoices/:id/payments` | Payment history |
+| GET | `/invoices/:id/pdf[?download=1]` | `application/pdf` |
 
----
+## Payments
 
-## Projects API
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/payments?invoiceId=` | List |
+| GET | `/payments/:id` | Detail |
+| POST | `/payments` | `{ invoiceId, amount, method?, paymentDate?, reference?, notes? }`. The invoice must be SENT, PARTIALLY_PAID or OVERDUE. `amount > outstanding` → `400`. |
 
-### 1. List All Projects
-- **Endpoint**: `GET /api/projects`
+## Document templates
 
-### 2. Create Project
-- **Endpoint**: `POST /api/projects`
-- **Body**:
-```json
-{
-  "name": "E-Commerce Platform Redesign",
-  "description": "Next.js & Tailwind responsive store",
-  "status": "IN_PROGRESS",
-  "budget": 18500,
-  "clientId": "<client-uuid>"
-}
-```
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/document-templates?type=QUOTATION\|INVOICE` | List |
+| GET | `/document-templates/:id` | Detail |
+| POST | `/document-templates` | `{ name, type, isDefault?, branding: { primaryColor, accentColor, fontFamily: Helvetica\|Times-Roman\|Courier, showLogo }, layout: { title, sections: [{ key, visible }], footerText? } }` |
+| PATCH | `/document-templates/:id` | Partial; bumps `version`. Issued documents are unaffected. |
+| POST | `/document-templates/:id/set-default` | Makes it the default for its type |
+| DELETE | `/document-templates/:id` | Not allowed for the default template |
 
----
+Section keys: `header, parties, items, totals, notes, terms, footer`. `items` and `totals` are always visible.
 
-## Quotations API
+## Clients, projects, settings, dashboard
 
-### 1. List All Quotations
-- **Endpoint**: `GET /api/quotations`
-
-### 2. Create Quotation
-- **Endpoint**: `POST /api/quotations`
-- **Body**:
-```json
-{
-  "title": "Enterprise Web Suite Proposal",
-  "clientId": "<client-uuid>",
-  "projectId": "<project-uuid>",
-  "taxRate": 10,
-  "items": [
-    { "description": "Frontend Architecture", "quantity": 1, "unitPrice": 7000 },
-    { "description": "Backend API Services", "quantity": 1, "unitPrice": 8000 }
-  ]
-}
-```
-
-### 3. Convert Quotation to Invoice
-- **Endpoint**: `POST /api/quotations/:id/convert`
-- **Description**: Automatically generates a new `SENT` invoice with matching line items and marks the quotation as `ACCEPTED`.
-
----
-
-## Invoices API
-
-### 1. List All Invoices
-- **Endpoint**: `GET /api/invoices`
-
-### 2. Create Invoice
-- **Endpoint**: `POST /api/invoices`
-- **Body**:
-```json
-{
-  "title": "Milestone 1 Payment",
-  "clientId": "<client-uuid>",
-  "dueDate": "2026-10-30",
-  "taxRate": 0,
-  "items": [
-    { "description": "Design Token Guidelines", "quantity": 1, "unitPrice": 4200 }
-  ]
-}
-```
-
----
-
-## Payments API
-
-### 1. List All Payments
-- **Endpoint**: `GET /api/payments`
-
-### 2. Record Payment
-- **Endpoint**: `POST /api/payments`
-- **Body**:
-```json
-{
-  "invoiceId": "<invoice-uuid>",
-  "amount": 4200,
-  "paymentMethod": "BANK_TRANSFER",
-  "reference": "WIRE-9938472",
-  "notes": "Milestone 1 settled"
-}
-```
-*Note: Recording a payment automatically updates `paidAmount`, `balance`, and sets the invoice status to `PAID` or `PARTIALLY_PAID`.*
-
----
-
-## Dashboard & Metrics API
-
-### 1. Get Dashboard Metrics
-- **Endpoint**: `GET /api/dashboard/metrics`
-- **Response**:
-```json
-{
-  "totalRevenue": 48250,
-  "pendingAmount": 8250,
-  "activeProjects": 4,
-  "totalClients": 12,
-  "activeQuotations": 3
-}
-```
-
-### 2. Get Recent Activity
-- **Endpoint**: `GET /api/dashboard/recent`
-
----
-
-## Settings API
-
-### 1. Get Agency Settings
-- **Endpoint**: `GET /api/settings`
-
-### 2. Update Agency Settings
-- **Endpoint**: `PATCH /api/settings`
+| Method | Path | Notes |
+|---|---|---|
+| GET/POST | `/clients` | `?search=`; body `{ name, email, company?, phone?, address?, taxId?, notes?, status? }`. Email is unique per agency. |
+| GET/PATCH/DELETE | `/clients/:id` | Delete is refused (`409`) when the client has projects or documents. |
+| GET/POST | `/projects` | `?clientId=`; body `{ name, clientId, status?, budget?, startDate?, endDate?, description? }` |
+| GET/PATCH/DELETE | `/projects/:id` | |
+| GET/PATCH | `/settings` | Agency profile: `name, email, phone, website, address, taxId, currency (ISO 4217), logoUrl (PNG/JPEG data URL or "")` |
+| GET | `/dashboard/metrics` | Revenue, outstanding, overdue, open quotations, 12-month revenue |
+| GET | `/dashboard/recent` | Latest quotations, invoices and payments |
+| GET | `/dashboard/documents` | Status breakdown, expiring quotations, overdue invoices |
+| GET | `/health` | Public liveness/DB check |
