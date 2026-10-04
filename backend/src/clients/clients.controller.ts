@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CurrentAgency } from '../auth/auth-user';
 import { ClientsService } from './clients.service';
@@ -17,7 +27,10 @@ export class ClientsController {
   }
 
   @Get(':id')
-  findOne(@CurrentAgency() agencyId: string, @Param('id', ParseUUIDPipe) id: string) {
+  findOne(
+    @CurrentAgency() agencyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.clients.findOne(agencyId, id);
   }
 
@@ -27,12 +40,19 @@ export class ClientsController {
   }
 
   @Patch(':id')
-  update(@CurrentAgency() agencyId: string, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateClientDto) {
+  update(
+    @CurrentAgency() agencyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateClientDto,
+  ) {
     return this.clients.update(agencyId, id, dto);
   }
 
   @Delete(':id')
-  remove(@CurrentAgency() agencyId: string, @Param('id', ParseUUIDPipe) id: string) {
+  remove(
+    @CurrentAgency() agencyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.clients.remove(agencyId, id);
   }
 }
