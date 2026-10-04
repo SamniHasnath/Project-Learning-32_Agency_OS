@@ -1,6 +1,14 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { InvoiceStatus } from '@prisma/client';
-import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import { DocumentPricingDto } from '../../common/documents/document.dto';
 
 export class CreateInvoiceDto extends DocumentPricingDto {
@@ -13,7 +21,10 @@ export class CreateInvoiceDto extends DocumentPricingDto {
   @IsUUID()
   projectId?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid', description: 'Defaults to the agency default invoice template' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Defaults to the agency default invoice template',
+  })
   @IsOptional()
   @IsUUID()
   templateId?: string | null;
@@ -35,7 +46,10 @@ export class CreateInvoiceDto extends DocumentPricingDto {
   @IsDateString()
   issueDate?: string;
 
-  @ApiPropertyOptional({ example: '2026-10-18', description: 'Defaults to 14 days after the issue date' })
+  @ApiPropertyOptional({
+    example: '2026-10-18',
+    description: 'Defaults to 14 days after the issue date',
+  })
   @IsOptional()
   @IsDateString()
   dueDate?: string;
@@ -45,7 +59,10 @@ export class CreateInvoiceDto extends DocumentPricingDto {
 export class UpdateInvoiceDto extends PartialType(CreateInvoiceDto) {}
 
 export class UpdateInvoiceStatusDto {
-  @ApiProperty({ enum: InvoiceStatus, description: 'PARTIALLY_PAID and PAID are set by recording payments' })
+  @ApiProperty({
+    enum: InvoiceStatus,
+    description: 'PARTIALLY_PAID and PAID are set by recording payments',
+  })
   @IsEnum(InvoiceStatus)
   status: InvoiceStatus;
 }
