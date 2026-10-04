@@ -1,6 +1,14 @@
 import type { DocumentType } from '@prisma/client';
 
-export const SECTION_KEYS = ['header', 'parties', 'items', 'totals', 'notes', 'terms', 'footer'] as const;
+export const SECTION_KEYS = [
+  'header',
+  'parties',
+  'items',
+  'totals',
+  'notes',
+  'terms',
+  'footer',
+] as const;
 export type SectionKey = (typeof SECTION_KEYS)[number];
 
 export const FONT_FAMILIES = ['Helvetica', 'Times-Roman', 'Courier'] as const;
@@ -44,27 +52,46 @@ export function normaliseLayout(layout: TemplateLayout): TemplateLayout {
   for (const s of layout.sections ?? []) {
     if (!SECTION_KEYS.includes(s.key) || seen.has(s.key)) continue;
     seen.add(s.key);
-    sections.push({ key: s.key, visible: REQUIRED_SECTIONS.includes(s.key) ? true : !!s.visible });
+    sections.push({
+      key: s.key,
+      visible: REQUIRED_SECTIONS.includes(s.key) ? true : !!s.visible,
+    });
   }
-  for (const key of SECTION_KEYS) if (!seen.has(key)) sections.push({ key, visible: true });
-  return { title: layout.title?.trim() || 'DOCUMENT', sections, footerText: layout.footerText?.trim() || undefined };
+  for (const key of SECTION_KEYS)
+    if (!seen.has(key)) sections.push({ key, visible: true });
+  return {
+    title: layout.title?.trim() || 'DOCUMENT',
+    sections,
+    footerText: layout.footerText?.trim() || undefined,
+  };
 }
 
-const allSections = (hidden: SectionKey[] = []) => SECTION_KEYS.map((key) => ({ key, visible: !hidden.includes(key) }));
+const allSections = (hidden: SectionKey[] = []) =>
+  SECTION_KEYS.map((key) => ({ key, visible: !hidden.includes(key) }));
 
 export const BUILTIN_TEMPLATE: Record<DocumentType, TemplateSnapshot> = {
   QUOTATION: {
     id: null,
     name: 'Built-in quotation',
     version: 1,
-    branding: { primaryColor: '#464feb', accentColor: '#0f172a', fontFamily: 'Helvetica', showLogo: true },
+    branding: {
+      primaryColor: '#464feb',
+      accentColor: '#0f172a',
+      fontFamily: 'Helvetica',
+      showLogo: true,
+    },
     layout: { title: 'QUOTATION', sections: allSections() },
   },
   INVOICE: {
     id: null,
     name: 'Built-in invoice',
     version: 1,
-    branding: { primaryColor: '#464feb', accentColor: '#0f172a', fontFamily: 'Helvetica', showLogo: true },
+    branding: {
+      primaryColor: '#464feb',
+      accentColor: '#0f172a',
+      fontFamily: 'Helvetica',
+      showLogo: true,
+    },
     layout: { title: 'INVOICE', sections: allSections() },
   },
 };
