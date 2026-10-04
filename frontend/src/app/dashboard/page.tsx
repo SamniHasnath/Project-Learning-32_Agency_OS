@@ -1,91 +1,123 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Dashboard } from "@/components/workspace/workspace-ui";
-import { DashboardApi, type DashboardMetrics, type Invoice, type Quotation, type Payment } from "@/services/agency-api";
-import type { Metric, WorkspaceRecord } from "@/types/domain";
+import Link from "next/link";
+import { buttonClass, Card, ErrorState, LoadingState, PageHeading, Stat, StatusBadge } from "@/components/ui/primitives";
+import { useSession } from "@/context/auth-context";
+import { useApi } from "@/hooks/use-api";
+import { date, money } from "@/lib/format";
+import { DashboardApi } from "@/services/agency-api";
 
 export default function DashboardPage() {
-  const [metricsData, setMetricsData] = useState<DashboardMetrics | null>(null);
-  const [recentData, setRecentData] = useState<{ invoices: Invoice[]; quotations: Quotation[]; payments: Payment[] } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, agency } = useSession();
+  const { data, error, loading, reload } = useApi(() => Promise.all([DashboardApi.metrics(), DashboardApi.recent()]), []);
+  const cur = agency.currency;
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const [m, r] = await Promise.all([
-          DashboardApi.getMetrics(),
-          DashboardApi.getRecent(),
-        ]);
-        setMetricsData(m);
-        setRecentData(r);
-      } catch (err) {
-        console.warn("Using offline mode / fallback for dashboard data:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadData();
-  }, []);
+  if (loading && !data) return <LoadingState />;
+  if (error || !data) return <ErrorState message={error ?? "Could not load dashboard"} onRetry={reload} />;
+  const [m, recent] = data;
+  const max = Math.max(1, ...m.revenueByMonth.map((r) => Number(r.amount)));
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
-  const formattedMetrics: Metric[] = metricsData
-    ? [
-        {
-          label: "Total Revenue",
-          value: new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(metricsData.totalRevenue),
-          change: "+12.4% vs last month",
-          tone: "brand",
-        },
-        {
-          label: "Pending Invoices",
-          value: new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(metricsData.pendingAmount),
-          change: "Outstanding collection",
-          tone: "amber",
-        },
-        {
-          label: "Active Projects",
-          value: `${metricsData.activeProjects} active`,
-          change: "In progress",
-          tone: "green",
-        },
-        {
-          label: "Active Quotations",
-          value: `${metricsData.activeQuotations} proposals`,
-          change: "Sent to clients",
-          tone: "blue",
-        },
-      ]
-    : [
-        { label: "Total Revenue", value: "$9,200", change: "+0% vs last month", tone: "brand" },
-        { label: "Pending Invoices", value: "$8,250", change: "Outstanding collection", tone: "amber" },
-        { label: "Active Projects", value: "1 active", change: "In progress", tone: "green" },
-        { label: "Active Quotations", value: "1 proposal", change: "Sent to clients", tone: "blue" },
-      ];
+  return (
+    <>
+      <PageHeading
+        title={`${greeting}, ${user.name.split(" ")[0]}`}
+        description={`Here's what's happening at ${agency.name}.`}
+        actions={
+          <>
+            <Link href="/invoices/new" className={buttonClass.secondary}>
+              + Invoice
+            </Link>
+            <Link href="/quotations/new" className={buttonClass.primary}>
+              + Quotation
+            </Link>
+          </>
+        }
+      />
 
-  const formattedActivity: WorkspaceRecord[] = recentData
-    ? [
-        ...recentData.invoices.map((inv) => ({
-          id: inv.invoiceNumber,
-          title: `Invoice ${inv.invoiceNumber} - ${inv.client?.name || "Client"}`,
-          subtitle: inv.title,
-          status: (inv.status === "PAID" ? "Paid" : inv.status === "SENT" ? "Sent" : "Overdue") as any,
-          amount: inv.totalAmount,
-          date: inv.createdAt ? inv.createdAt.split("T")[0] : new Date().toISOString().split("T")[0],
-        })),
-        ...recentData.quotations.map((q) => ({
-          id: q.quoteNumber,
-          title: `Quotation ${q.quoteNumber} - ${q.client?.name || "Client"}`,
-          subtitle: q.title,
-          status: (q.status === "ACCEPTED" ? "Accepted" : q.status === "SENT" ? "Sent" : "Draft") as any,
-          amount: q.totalAmount,
-          date: q.createdAt ? q.createdAt.split("T")[0] : new Date().toISOString().split("T")[0],
-        })),
-      ].slice(0, 5)
-    : [
-        { id: "INV-2026-0001", title: "Invoice INV-2026-0001 - Globex Enterprise", subtitle: "Brand Identity Design Milestone 1", status: "Paid", amount: 9200, date: "2026-09-29" },
-        { id: "INV-2026-0002", title: "Invoice INV-2026-0002 - Acme Corporation", subtitle: "E-Commerce Initial Deposit (50%)", status: "Sent", amount: 8250, date: "2026-09-29" },
-        { id: "QT-2026-0001", title: "Quotation QT-2026-0001 - Acme Corporation", subtitle: "Enterprise Web Application Suite", status: "Sent", amount: 16500, date: "2026-09-29" },
-      ];
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat label="Revenue collected" value={money(m.totalRevenue, cur)} hint="All recorded payments" tone="brand" />
+        <Stat label="Outstanding" value={money(m.outstandingAmount, cur)} hint={`${m.openInvoices} open invoice${m.openInvoices === 1 ? "" : "s"}`} tone="amber" />
+        <Stat label="Overdue" value={money(m.overdueAmount, cur)} hint={`${m.overdueInvoices} overdue invoice${m.overdueInvoices === 1 ? "" : "s"}`} tone="rose" />
+        <Stat label="Open quotations" value={money(m.openQuotationsValue, cur)} hint={`${m.openQuotations} draft or sent · ${m.totalClients} clients · ${m.activeProjects} active projects`} tone="blue" />
+      </div>
 
-  return <Dashboard metrics={formattedMetrics} activity={formattedActivity} />;
+      <div className="mt-5 grid gap-5 xl:grid-cols-[1.6fr_1fr]">
+        <Card title="Revenue collected" description="Payments received over the last 12 months">
+          <div className="flex h-48 items-end gap-1.5 border-b border-l border-slate-100 px-2 sm:gap-3">
+            {m.revenueByMonth.map((r) => {
+              const pct = (Number(r.amount) / max) * 100;
+              const label = new Date(`${r.month}-01T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+              return (
+                <div key={r.month} className="group relative flex h-full flex-1 items-end" title={`${label}: ${money(r.amount, cur)}`}>
+                  <div className="w-full rounded-t-sm bg-brand-500 transition group-hover:bg-brand-700" style={{ height: `${Math.max(pct, Number(r.amount) > 0 ? 3 : 0.5)}%` }} aria-label={`${label}: ${money(r.amount, cur)}`} />
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-2 flex gap-1.5 px-2 text-center text-[11px] text-slate-400 sm:gap-3" aria-hidden="true">
+            {m.revenueByMonth.map((r, i, all) => (
+              <span key={r.month} className="flex-1">
+                {i % 2 === 1 || i === all.length - 1 ? new Date(`${r.month}-01T00:00:00Z`).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }) : ""}
+              </span>
+            ))}
+          </div>
+        </Card>
+
+        <Card title="Recent payments" actions={<Link className="text-xs font-semibold" href="/payments">View all</Link>}>
+          {recent.payments.length === 0 ? (
+            <p className="text-sm text-slate-500">No payments yet.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {recent.payments.map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-3 py-3 text-sm">
+                  <div className="min-w-0">
+                    <Link href={`/invoices/${p.invoiceId}`} className="font-medium text-slate-800 hover:text-brand-700">
+                      {p.invoice?.number}
+                    </Link>
+                    <p className="truncate text-xs text-slate-500">
+                      {p.invoice?.clientSnapshot.company || p.invoice?.clientSnapshot.name} · {date(p.paymentDate)}
+                    </p>
+                  </div>
+                  <span className="font-semibold text-emerald-700">{money(p.amount, p.invoice?.currency)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <Card title="Recent quotations" actions={<Link className="text-xs font-semibold" href="/quotations">View all</Link>}>
+          <RecentList rows={recent.quotations.map((q) => ({ id: q.id, href: `/quotations/${q.id}`, number: q.number, title: q.title, status: q.status, amount: money(q.total, q.currency) }))} empty="No quotations yet." />
+        </Card>
+        <Card title="Recent invoices" actions={<Link className="text-xs font-semibold" href="/invoices">View all</Link>}>
+          <RecentList rows={recent.invoices.map((i) => ({ id: i.id, href: `/invoices/${i.id}`, number: i.number, title: i.title, status: i.status, amount: money(i.total, i.currency) }))} empty="No invoices yet." />
+        </Card>
+      </div>
+    </>
+  );
+}
+
+function RecentList({ rows, empty }: { rows: { id: string; href: string; number: string; title: string; status: string; amount: string }[]; empty: string }) {
+  if (!rows.length) return <p className="text-sm text-slate-500">{empty}</p>;
+  return (
+    <ul className="divide-y divide-slate-100">
+      {rows.map((r) => (
+        <li key={r.id} className="flex items-center justify-between gap-3 py-3 text-sm">
+          <div className="min-w-0">
+            <Link href={r.href} className="font-medium text-slate-800 hover:text-brand-700">
+              {r.number}
+            </Link>
+            <p className="truncate text-xs text-slate-500">{r.title}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            <StatusBadge status={r.status} />
+            <span className="w-24 text-right font-medium text-slate-900">{r.amount}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
 }
