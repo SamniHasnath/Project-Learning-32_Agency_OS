@@ -27,18 +27,26 @@ export interface Harness {
     del: (url: string) => request.Test;
   };
   /** Creates a quotation and walks it through the given statuses. */
-  quotation: (a: TestAgency, opts?: { items?: object[]; statuses?: string[]; extra?: object }) => Promise<any>;
+  quotation: (
+    a: TestAgency,
+    opts?: { items?: object[]; statuses?: string[]; extra?: object },
+  ) => Promise<any>;
   /** Creates a SENT invoice with the given total. */
   sentInvoice: (a: TestAgency, total: number) => Promise<any>;
   close: () => Promise<void>;
 }
 
-const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+const day = (offset: number) =>
+  new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 let counter = 0;
 
 export async function createHarness(): Promise<Harness> {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  const app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false });
+  const moduleRef = await Test.createTestingModule({
+    imports: [AppModule],
+  }).compile();
+  const app = moduleRef.createNestApplication<NestExpressApplication>({
+    bodyParser: false,
+  });
   configureApp(app);
   await app.init();
   const prisma = app.get(PrismaService);
@@ -50,23 +58,47 @@ export async function createHarness(): Promise<Harness> {
 
   const http = () => request(app.getHttpServer());
   const as = (token: string) => ({
-    get: (url: string) => http().get(`/api${url}`).set('Authorization', `Bearer ${token}`),
-    post: (url: string, body: object = {}) => http().post(`/api${url}`).set('Authorization', `Bearer ${token}`).send(body),
-    patch: (url: string, body: object = {}) => http().patch(`/api${url}`).set('Authorization', `Bearer ${token}`).send(body),
-    del: (url: string) => http().delete(`/api${url}`).set('Authorization', `Bearer ${token}`),
+    get: (url: string) =>
+      http().get(`/api${url}`).set('Authorization', `Bearer ${token}`),
+    post: (url: string, body: object = {}) =>
+      http()
+        .post(`/api${url}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body),
+    patch: (url: string, body: object = {}) =>
+      http()
+        .patch(`/api${url}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body),
+    del: (url: string) =>
+      http().delete(`/api${url}`).set('Authorization', `Bearer ${token}`),
   });
 
   const agency = async (name: string): Promise<TestAgency> => {
     const email = `${name.toLowerCase().replace(/\W+/g, '')}-${++counter}-${Date.now()}@test.dev`;
     const reg = await http()
       .post('/api/auth/register')
-      .send({ agencyName: name, name: `${name} Owner`, email, password: 'Password123!' })
+      .send({
+        agencyName: name,
+        name: `${name} Owner`,
+        email,
+        password: 'Password123!',
+      })
       .expect(201);
     const token = reg.body.accessToken as string;
     const client = await as(token)
-      .post('/clients', { name: `${name} Client`, email: `client-${counter}@${name.toLowerCase().replace(/\W+/g, '')}.test`, company: `${name} Customer Ltd` })
+      .post('/clients', {
+        name: `${name} Client`,
+        email: `client-${counter}@${name.toLowerCase().replace(/\W+/g, '')}.test`,
+        company: `${name} Customer Ltd`,
+      })
       .expect(201);
-    return { token, agencyId: reg.body.agency.id, userId: reg.body.user.id, clientId: client.body.id };
+    return {
+      token,
+      agencyId: reg.body.agency.id,
+      userId: reg.body.user.id,
+      clientId: client.body.id,
+    };
   };
 
   const quotation: Harness['quotation'] = async (a, opts = {}) => {
@@ -76,23 +108,46 @@ export async function createHarness(): Promise<Harness> {
         title: 'Test quotation',
         expiryDate: day(30),
         taxRate: 10,
-        items: opts.items ?? [{ description: 'Work', quantity: 1, unitPrice: 1000 }],
+        items: opts.items ?? [
+          { description: 'Work', quantity: 1, unitPrice: 1000 },
+        ],
         ...(opts.extra ?? {}),
       })
       .expect(201);
     let q = res.body;
     for (const status of opts.statuses ?? []) {
-      q = (await as(a.token).patch(`/quotations/${q.id}/status`, { status }).expect(200)).body;
+      q = (
+        await as(a.token)
+          .patch(`/quotations/${q.id}/status`, { status })
+          .expect(200)
+      ).body;
     }
     return q;
   };
 
   const sentInvoice: Harness['sentInvoice'] = async (a, total) => {
     const inv = await as(a.token)
-      .post('/invoices', { clientId: a.clientId, title: 'Test invoice', items: [{ description: 'Work', quantity: 1, unitPrice: total }] })
+      .post('/invoices', {
+        clientId: a.clientId,
+        title: 'Test invoice',
+        items: [{ description: 'Work', quantity: 1, unitPrice: total }],
+      })
       .expect(201);
-    return (await as(a.token).patch(`/invoices/${inv.body.id}/status`, { status: 'SENT' }).expect(200)).body;
+    return (
+      await as(a.token)
+        .patch(`/invoices/${inv.body.id}/status`, { status: 'SENT' })
+        .expect(200)
+    ).body;
   };
 
-  return { app, prisma, http, agency, as, quotation, sentInvoice, close: () => app.close() };
+  return {
+    app,
+    prisma,
+    http,
+    agency,
+    as,
+    quotation,
+    sentInvoice,
+    close: () => app.close(),
+  };
 }
