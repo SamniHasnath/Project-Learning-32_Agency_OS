@@ -3,7 +3,11 @@ import { Prisma } from '@prisma/client';
 
 export type DocumentPrefix = 'QT' | 'INV' | 'PAY';
 
-export function formatDocumentNumber(prefix: DocumentPrefix, year: number, value: number) {
+export function formatDocumentNumber(
+  prefix: DocumentPrefix,
+  year: number,
+  value: number,
+) {
   return `${prefix}-${year}-${String(value).padStart(4, '0')}`;
 }
 
@@ -17,7 +21,12 @@ export function formatDocumentNumber(prefix: DocumentPrefix, year: number, value
  */
 @Injectable()
 export class NumberingService {
-  async next(tx: Prisma.TransactionClient, agencyId: string, prefix: DocumentPrefix, date = new Date()) {
+  async next(
+    tx: Prisma.TransactionClient,
+    agencyId: string,
+    prefix: DocumentPrefix,
+    date = new Date(),
+  ) {
     const year = date.getUTCFullYear();
     const rows = await tx.$queryRaw<{ last_value: number }[]>`
       INSERT INTO document_sequences (agency_id, type, year, last_value)
