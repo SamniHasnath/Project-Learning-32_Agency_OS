@@ -5,6 +5,7 @@ Multi-tenant quotation, invoice, payment and document-template management for ag
 - **Frontend:** Next.js 16 (App Router), React 19, Tailwind CSS 4
 - **Backend:** NestJS 11, Prisma 7, PostgreSQL 16
 - **PDF:** server-side vector PDFs with `pdfkit` (real text, not screenshots)
+<img width="698" height="383" alt="image" src="https://github.com/user-attachments/assets/7316905e-ef12-4c7e-be82-36ddb121d07e" />
 
 ## Features
 
